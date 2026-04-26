@@ -218,7 +218,7 @@ async def lifespan(app: FastAPI):
     ]
     logger.info(f"✓ {len(tasks)} background monitors started")
     logger.info("✓ FIM, Vulnerability Scanner, Hardening Advisor, Honeypot active")
-    logger.info("✓ AI SBC Security is operational — dashboard at http://localhost:8080")
+    logger.info("✓ AI SBC Security is operational — dashboard at http://localhost:7443")
 
     yield
 

@@ -20,7 +20,7 @@ INSTALL_DIR="/opt/ai-sbc-security"
 DATA_DIR="/var/lib/ai-sbc-security"
 CONFIG_DIR="/etc/ai-sbc-security"
 SERVICE_NAME="ai-sbc-security"
-DEFAULT_PORT=8080
+DEFAULT_PORT=7443
 REPO_URL="https://github.com/fahimrahmanbooom/ai-sbc-security"
 STEPS_TOTAL=8
 STEP_CURRENT=0
@@ -589,6 +589,55 @@ EOF
     else
         warn "Service may not have started — check: journalctl -u $SERVICE_NAME -n 30"
     fi
+
+    # Install aisbc CLI tool
+    $SUDO tee /usr/local/bin/aisbc > /dev/null << 'AISBC_EOF'
+#!/usr/bin/env bash
+# AI SBC Security — CLI helper
+SERVICE_NAME="ai-sbc-security"
+REPO_RAW="https://raw.githubusercontent.com/fahimrahmanbooom/ai-sbc-security/main/install.sh"
+
+case "${1:-}" in
+  -up|update)
+    echo "Pulling latest version from GitHub..."
+    curl -sSL "$REPO_RAW" | bash
+    ;;
+  -r|restart)
+    sudo systemctl restart "$SERVICE_NAME"
+    echo "Service restarted."
+    ;;
+  -s|status)
+    systemctl status "$SERVICE_NAME"
+    ;;
+  -l|logs)
+    journalctl -u "$SERVICE_NAME" -f
+    ;;
+  -start|start)
+    sudo systemctl start "$SERVICE_NAME"
+    echo "Service started."
+    ;;
+  -stop|stop)
+    sudo systemctl stop "$SERVICE_NAME"
+    echo "Service stopped."
+    ;;
+  *)
+    echo ""
+    echo "  AI SBC Security CLI"
+    echo ""
+    echo "  Usage: aisbc <command>"
+    echo ""
+    echo "    -up       Update to latest version from GitHub"
+    echo "    -r        Restart the service"
+    echo "    -s        Show service status"
+    echo "    -l        Tail live logs"
+    echo "    -start    Start the service"
+    echo "    -stop     Stop the service"
+    echo ""
+    ;;
+esac
+AISBC_EOF
+    $SUDO chmod +x /usr/local/bin/aisbc
+    ok "aisbc CLI installed — run 'aisbc -up' to update anytime"
 }
 
 # ── Final summary ─────────────────────────────────────────────────────────────
@@ -627,8 +676,10 @@ print_summary() {
     printf "${BGREEN}  ----------------------------------------------------------------${RESET}\n"
     printf "\n"
     printf "  ${BOLD}Useful commands:${RESET}\n"
-    printf "    ${DIM}sudo systemctl status ai-sbc-security${RESET}\n"
-    printf "    ${DIM}sudo journalctl -u ai-sbc-security -f${RESET}\n"
+    printf "    ${BCYAN}aisbc -up${RESET}       ${DIM}Update to latest version${RESET}\n"
+    printf "    ${BCYAN}aisbc -r${RESET}        ${DIM}Restart the service${RESET}\n"
+    printf "    ${BCYAN}aisbc -s${RESET}        ${DIM}Show service status${RESET}\n"
+    printf "    ${BCYAN}aisbc -l${RESET}        ${DIM}Tail live logs${RESET}\n"
     printf "    ${DIM}sudo nano /etc/ai-sbc-security/config.yaml${RESET}\n"
     printf "    ${DIM}bash install.sh --uninstall${RESET}\n"
     printf "\n"

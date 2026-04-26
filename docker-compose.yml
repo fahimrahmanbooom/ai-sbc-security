@@ -9,7 +9,7 @@ services:
     network_mode: host          # Required for network monitoring
     privileged: true            # Required for packet capture
     ports:
-      - "8080:8080"
+      - "7443:7443"
     volumes:
       - ai-sbc-data:/var/lib/ai-sbc-security
       - /var/log:/host/var/log:ro
@@ -20,7 +20,7 @@ services:
       - SECRET_KEY=${SECRET_KEY:-}
       - TZ=${TZ:-UTC}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:7443/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3

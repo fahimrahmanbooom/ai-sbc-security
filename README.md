@@ -23,7 +23,7 @@
 curl -sSL https://raw.githubusercontent.com/fahimrahmanbooom/ai-sbc-security/main/install.sh | bash
 ```
 
-Open `http://<your-device-ip>:8080` → Create admin account → Set up 2FA → You're protected.
+Open `http://<your-device-ip>:7443` → Create admin account → Set up 2FA → You're protected.
 
 **Uninstall:** `curl -sSL .../install.sh | bash -s -- --uninstall`
 
@@ -148,7 +148,7 @@ cd ai-sbc-security
 docker-compose up -d
 ```
 
-Dashboard at `http://localhost:8080`.
+Dashboard at `http://localhost:7443`.
 
 ### Option 3 — Manual
 
@@ -172,14 +172,14 @@ export DB_PATH=./data/db.sqlite
 mkdir -p data/models
 
 # 5. Run
-uvicorn backend.main:app --host 0.0.0.0 --port 8080
+uvicorn backend.main:app --host 0.0.0.0 --port 7443
 ```
 
 ---
 
 ## First-Time Setup
 
-1. **Open** `http://<device-ip>:8080`
+1. **Open** `http://<device-ip>:7443`
 2. **Create your admin account** — first registered user is automatically admin
 3. **Set up 2FA** — you'll be prompted to scan a QR code and verify with your authenticator app
 4. **Dashboard is live** — AI models begin warming up immediately
@@ -222,7 +222,7 @@ Restart after changes: `sudo systemctl restart ai-sbc-security`
 
 ## API Reference
 
-The backend exposes a full REST API. Interactive docs at `http://<device>:8080/api/docs`.
+The backend exposes a full REST API. Interactive docs at `http://<device>:7443/api/docs`.
 
 | Method | Endpoint | Description |
 |---|---|---|
@@ -331,7 +331,7 @@ curl -sSL https://raw.githubusercontent.com/fahimrahmanbooom/ai-sbc-security/mai
 
 ## Security Considerations
 
-**Network Exposure** — The dashboard binds to `0.0.0.0:8080` by default. If your device is exposed to the internet, consider placing it behind a reverse proxy (nginx) with HTTPS and rate limiting. Example nginx config:
+**Network Exposure** — The dashboard binds to `0.0.0.0:7443` by default. If your device is exposed to the internet, consider placing it behind a reverse proxy (nginx) with HTTPS and rate limiting. Example nginx config:
 
 ```nginx
 server {
@@ -339,7 +339,7 @@ server {
     ssl_certificate /etc/ssl/certs/cert.pem;
     ssl_certificate_key /etc/ssl/private/key.pem;
     location / {
-        proxy_pass http://localhost:8080;
+        proxy_pass http://localhost:7443;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";

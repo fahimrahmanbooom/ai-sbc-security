@@ -3,7 +3,7 @@
 
 server:
   host: "0.0.0.0"
-  port: 8080
+  port: 7443
   debug: false
   workers: 1  # Keep at 1 for SBCs with limited RAM
 
