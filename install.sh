@@ -642,8 +642,11 @@ smart_update() {
         cd "$INSTALL_DIR/frontend"
         npm install --silent 2>/dev/null
         npm run build --silent 2>/dev/null
+        # Copy built files to backend/static so FastAPI serves the new version
+        mkdir -p "$INSTALL_DIR/backend/static"
+        cp -r "$INSTALL_DIR/frontend/dist/"* "$INSTALL_DIR/backend/static/"
         cd "$INSTALL_DIR"
-        ok "Frontend rebuilt"
+        ok "Frontend rebuilt and deployed"
         CHANGED=1
     else
         skip "Frontend"
