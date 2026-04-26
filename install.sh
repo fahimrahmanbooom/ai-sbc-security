@@ -4,7 +4,9 @@
 #  Usage: curl -sSL https://raw.githubusercontent.com/fahimrahmanbooom/ai-sbc-security/main/install.sh | bash
 # ═══════════════════════════════════════════════════════════════════════════════
 
-set -euo pipefail
+set -uo pipefail
+# Note: -e (errexit) intentionally omitted so non-fatal errors don't kill install
+# Individual steps use explicit error handling via fail()
 
 # ── Terminal Colors & Styles ──────────────────────────────────────────────────
 RESET='\033[0m';    BOLD='\033[1m';    DIM='\033[2m';     ITALIC='\033[3m'
@@ -98,25 +100,24 @@ pkg_status() {
 print_banner() {
     clear
     echo ""
-    printf "${BCYAN}"
-    cat << 'BANNER'
-  ╔══════════════════════════════════════════════════════════╗
-  ║                                                          ║
-  ║    █████╗ ██╗      ███████╗██████╗  ██████╗             ║
-  ║   ██╔══██╗██║      ██╔════╝██╔══██╗██╔════╝             ║
-  ║   ███████║██║      ███████╗██████╔╝██║                  ║
-  ║   ██╔══██║██║      ╚════██║██╔══██╗██║                  ║
-  ║   ██║  ██║╚██████╗ ███████║██████╔╝╚██████╗             ║
-  ║   ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═════╝  ╚═════╝            ║
-  ║                                                          ║
-  ║              S E C U R I T Y   ·   A I                  ║
-  ║                                                          ║
-  ╠══════════════════════════════════════════════════════════╣
-  ║  AI-powered security monitoring for SBCs & Linux         ║
-  ║  github.com/fahimrahmanbooom/ai-sbc-security                 ║
-  ╚══════════════════════════════════════════════════════════╝
-BANNER
-    printf "${RESET}"
+    printf "${BCYAN}  ================================================================${RESET}\n"
+    printf "\n"
+    printf "  ${BOLD}${WHITE}    ###    ###      ####  ####   ####       ###                ${RESET}\n"
+    printf "  ${BOLD}${WHITE}   ## ##    ##      ##   ## ##  ##  ##     ## ##               ${RESET}\n"
+    printf "  ${BOLD}${CYAN}  ##   ##   ##      ####  ##  ## ##         ##   ##              ${RESET}\n"
+    printf "  ${BOLD}${CYAN}  #######   ##      ##    #####  ##         #######              ${RESET}\n"
+    printf "  ${BOLD}${WHITE}  ##   ##   ##      ##    ## ##  ##  ##     ##   ##              ${RESET}\n"
+    printf "  ${BOLD}${WHITE}  ##   ##  ####    ####  ##   ##  ####     ##   ##               ${RESET}\n"
+    printf "\n"
+    printf "  ${BOLD}${WHITE}       S E C U R I T Y     A I     E D I T I O N${RESET}\n"
+    printf "\n"
+    printf "${BCYAN}  ================================================================${RESET}\n"
+    printf "\n"
+    printf "  ${BGREEN}>>  AI-powered security monitoring for SBCs & Linux${RESET}\n"
+    printf "  ${DIM}    IDS  |  Anomaly AI  |  FIM  |  Vuln Scanner  |  Honeypot  |  2FA${RESET}\n"
+    printf "  ${DIM}    github.com/fahimrahmanbooom/ai-sbc-security${RESET}\n"
+    printf "\n"
+    printf "${BCYAN}  ================================================================${RESET}\n"
     echo ""
 }
 
@@ -604,42 +605,43 @@ print_summary() {
     SVC_STATUS=$($SUDO systemctl is-active "$SERVICE_NAME" 2>/dev/null || echo "unknown")
 
     echo ""
-    printf "${BGREEN}"
-    cat << SUMMARY
-  ╔══════════════════════════════════════════════════════════╗
-  ║                                                          ║
-  ║     ✓  AI SBC Security — Installation Complete!         ║
-  ║                                                          ║
-  ╠══════════════════════════════════════════════════════════╣
-SUMMARY
-    printf "${RESET}"
+    printf "${BGREEN}  ================================================================${RESET}\n"
+    printf "\n"
+    printf "  ${BGREEN}  [OK] AI SBC Security -- Installation Complete!${RESET}\n"
+    printf "\n"
+    printf "${BGREEN}  ================================================================${RESET}\n"
+    printf "\n"
 
-    printf "  ${BGREEN}║${RESET}  Service status: "
-    if [ "$SVC_STATUS" = "active" ]; then printf "${BGREEN}● RUNNING${RESET}"
-    else printf "${YELLOW}⚠ CHECK MANUALLY${RESET}"; fi
-    printf "%*s${BGREEN}║${RESET}\n" $((28 - ${#SVC_STATUS})) ""
+    printf "  Service status:   "
+    if [ "$SVC_STATUS" = "active" ]; then
+        printf "${BGREEN}RUNNING${RESET}\n"
+    else
+        printf "${YELLOW}NOT RUNNING -- check: journalctl -u $SERVICE_NAME -n 30${RESET}\n"
+    fi
 
-    printf "  ${BGREEN}║${RESET}                                                          ${BGREEN}║${RESET}\n"
-    printf "  ${BGREEN}║${RESET}  ${BOLD}Dashboard URLs:${RESET}                                       ${BGREEN}║${RESET}\n"
-    printf "  ${BGREEN}║${RESET}    ${BCYAN}http://%-48s${BGREEN}║${RESET}\n" "${LOCAL_IP}:${DEFAULT_PORT}"
-    printf "  ${BGREEN}║${RESET}    ${CYAN}http://localhost:${DEFAULT_PORT}${RESET}                                  ${BGREEN}║${RESET}\n"
-    printf "  ${BGREEN}║${RESET}                                                          ${BGREEN}║${RESET}\n"
-    printf "  ${BGREEN}╠══════════════════════════════════════════════════════════╣${RESET}\n"
-    printf "  ${BGREEN}║${RESET}  ${BOLD}First-time setup:${RESET}                                      ${BGREEN}║${RESET}\n"
-    printf "  ${BGREEN}║${RESET}    1. Open the dashboard URL in your browser              ${BGREEN}║${RESET}\n"
-    printf "  ${BGREEN}║${RESET}    2. Register your admin account                         ${BGREEN}║${RESET}\n"
-    printf "  ${BGREEN}║${RESET}    3. Scan the 2FA QR code with your authenticator app    ${BGREEN}║${RESET}\n"
-    printf "  ${BGREEN}║${RESET}    4. AI models begin training immediately                ${BGREEN}║${RESET}\n"
-    printf "  ${BGREEN}║${RESET}                                                          ${BGREEN}║${RESET}\n"
-    printf "  ${BGREEN}╠══════════════════════════════════════════════════════════╣${RESET}\n"
-    printf "  ${BGREEN}║${RESET}  ${BOLD}Useful commands:${RESET}                                       ${BGREEN}║${RESET}\n"
-    printf "  ${BGREEN}║${RESET}    ${DIM}sudo systemctl status ai-sbc-security${RESET}                ${BGREEN}║${RESET}\n"
-    printf "  ${BGREEN}║${RESET}    ${DIM}sudo journalctl -u ai-sbc-security -f${RESET}                ${BGREEN}║${RESET}\n"
-    printf "  ${BGREEN}║${RESET}    ${DIM}sudo nano /etc/ai-sbc-security/config.yaml${RESET}           ${BGREEN}║${RESET}\n"
-    printf "  ${BGREEN}║${RESET}    ${DIM}install.sh --uninstall  (to remove)${RESET}                  ${BGREEN}║${RESET}\n"
-    printf "  ${BGREEN}║${RESET}                                                          ${BGREEN}║${RESET}\n"
-    printf "  ${BGREEN}╚══════════════════════════════════════════════════════════╝${RESET}\n"
-    echo ""
+    printf "\n"
+    printf "  ${BOLD}Dashboard URLs:${RESET}\n"
+    printf "    ${BCYAN}http://${LOCAL_IP}:${DEFAULT_PORT}${RESET}\n"
+    printf "    ${CYAN}http://localhost:${DEFAULT_PORT}${RESET}\n"
+    printf "\n"
+    printf "${BGREEN}  ----------------------------------------------------------------${RESET}\n"
+    printf "\n"
+    printf "  ${BOLD}First-time setup:${RESET}\n"
+    printf "    1. Open the dashboard URL above in your browser\n"
+    printf "    2. Register your admin account\n"
+    printf "    3. Scan the 2FA QR code with your authenticator app\n"
+    printf "    4. AI models begin training automatically\n"
+    printf "\n"
+    printf "${BGREEN}  ----------------------------------------------------------------${RESET}\n"
+    printf "\n"
+    printf "  ${BOLD}Useful commands:${RESET}\n"
+    printf "    ${DIM}sudo systemctl status ai-sbc-security${RESET}\n"
+    printf "    ${DIM}sudo journalctl -u ai-sbc-security -f${RESET}\n"
+    printf "    ${DIM}sudo nano /etc/ai-sbc-security/config.yaml${RESET}\n"
+    printf "    ${DIM}bash install.sh --uninstall${RESET}\n"
+    printf "\n"
+    printf "${BGREEN}  ================================================================${RESET}\n"
+    printf "\n"
     printf "  ${DIM}Install log: %s${RESET}\n" "$LOG_FILE"
     echo ""
 }
@@ -650,7 +652,7 @@ uninstall() {
     printf "  ${BRED}⚠  UNINSTALL AI SBC SECURITY${RESET}\n\n"
     printf "  ${DIM}This will remove the application and all its files.${RESET}\n\n"
 
-    read -p "  Are you sure? [y/N] " -n 1 -r; echo ""
+    read -p "  Are you sure? [y/N] " -n 1 -r </dev/tty; echo ""
     [[ $REPLY =~ ^[Yy]$ ]] || { echo "  Cancelled."; exit 0; }
 
     spinner_start "Stopping service..."
@@ -666,7 +668,7 @@ uninstall() {
     ok "Application files removed"
 
     echo ""
-    read -p "  Remove all monitoring data ($DATA_DIR)? [y/N] " -n 1 -r; echo ""
+    read -p "  Remove all monitoring data ($DATA_DIR)? [y/N] " -n 1 -r </dev/tty; echo ""
     [[ $REPLY =~ ^[Yy]$ ]] && sudo rm -rf "$DATA_DIR" && ok "Data directory removed"
 
     printf "\n  ${BGREEN}AI SBC Security has been uninstalled.${RESET}\n\n"
