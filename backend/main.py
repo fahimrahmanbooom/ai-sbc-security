@@ -196,8 +196,8 @@ async def lifespan(app: FastAPI):
     honeypot.on_alert(on_honeypot_alert)
 
     # Wire federated learning to anomaly model
-    if anomaly._model is not None:
-        fl_client.set_model_reference(anomaly._model)
+    if anomaly.model is not None:
+        fl_client.set_model_reference(anomaly.model)
 
     # Register callbacks
     sys_mon.add_callback(on_system_metrics)
