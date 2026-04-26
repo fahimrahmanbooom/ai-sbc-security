@@ -1,0 +1,31 @@
+version: "3.9"
+
+services:
+  ai-sbc-security:
+    build: .
+    image: ghcr.io/fahimrahmanbooom/ai-sbc-security:latest
+    container_name: ai-sbc-security
+    restart: unless-stopped
+    network_mode: host          # Required for network monitoring
+    privileged: true            # Required for packet capture
+    ports:
+      - "8080:8080"
+    volumes:
+      - ai-sbc-data:/var/lib/ai-sbc-security
+      - /var/log:/host/var/log:ro
+      - /proc:/host/proc:ro
+      - ./config:/etc/ai-sbc-security:ro
+    environment:
+      - CONFIG_PATH=/etc/ai-sbc-security/default.yaml
+      - SECRET_KEY=${SECRET_KEY:-}
+      - TZ=${TZ:-UTC}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  ai-sbc-data:
+    driver: local

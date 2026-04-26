@@ -1,0 +1,95 @@
+# AI SBC Security - Default Configuration
+# Edit this file or set environment variables to override
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  debug: false
+  workers: 1  # Keep at 1 for SBCs with limited RAM
+
+security:
+  secret_key: ""  # Auto-generated on first run if empty
+  jwt_expire_minutes: 60
+  jwt_refresh_days: 7
+  bcrypt_rounds: 12
+  max_login_attempts: 5
+  lockout_minutes: 15
+
+database:
+  path: "/var/lib/ai-sbc-security/db.sqlite"
+  pool_size: 5
+
+ai:
+  # Anomaly Detection
+  anomaly:
+    enabled: true
+    sensitivity: 0.8          # 0.0 (low) to 1.0 (high)
+    model_retrain_hours: 24
+    baseline_samples: 1000
+    contamination: 0.05        # Expected fraction of outliers
+
+  # Intrusion Detection
+  ids:
+    enabled: true
+    rules_update_hours: 12
+    alert_threshold: 7         # Threat score 0-10
+    block_on_critical: false   # Auto-block IPs (requires iptables)
+
+  # Log Intelligence
+  log_intel:
+    enabled: true
+    max_log_lines_per_scan: 10000
+    correlation_window_seconds: 300
+
+  # Predictive Model
+  predictor:
+    enabled: true
+    forecast_hours: 24
+    min_history_hours: 48
+    confidence_threshold: 0.75
+
+monitors:
+  network:
+    enabled: true
+    interface: "auto"          # "auto" detects primary interface
+    capture_interval_seconds: 10
+    geo_lookup: true
+
+  system:
+    enabled: true
+    poll_interval_seconds: 5
+    cpu_alert_threshold: 90
+    ram_alert_threshold: 90
+    disk_alert_threshold: 85
+    temp_alert_celsius: 80
+
+  logs:
+    enabled: true
+    watch_paths:
+      - "/var/log/auth.log"
+      - "/var/log/syslog"
+      - "/var/log/kern.log"
+      - "/var/log/fail2ban.log"
+      - "/var/log/nginx/access.log"
+      - "/var/log/apache2/access.log"
+    scan_interval_seconds: 5
+
+alerts:
+  retention_days: 30
+  max_alerts: 10000
+  email:
+    enabled: false
+    smtp_host: ""
+    smtp_port: 587
+    smtp_user: ""
+    smtp_password: ""
+    recipient: ""
+  webhook:
+    enabled: false
+    url: ""
+    secret: ""
+
+frontend:
+  dashboard_refresh_seconds: 5
+  max_chart_points: 200
+  timezone: "auto"             # "auto" uses system timezone
