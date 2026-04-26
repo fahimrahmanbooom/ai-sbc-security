@@ -3,6 +3,7 @@ import { Routes, Route, NavLink, useNavigate, useLocation } from 'react-router-d
 import { motion, AnimatePresence } from 'framer-motion'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useTheme } from '../App'
+import { dashboardAPI } from '../utils/api'
 import Overview from './Overview'
 import AlertsPanel from './AlertsPanel'
 import AIInsights from './AIInsights'
@@ -13,6 +14,7 @@ import VulnPanel from './VulnPanel'
 import HardeningPanel from './HardeningPanel'
 import HoneypotPanel from './HoneypotPanel'
 import Settings from './Settings'
+import Help from './Help'
 
 const NAV = [
   { path: '/',          label: 'Overview',       icon: <GridIcon />,    exact: true },
@@ -25,6 +27,7 @@ const NAV = [
   { path: '/honeypot',  label: 'Honeypot',        icon: <HoneyIcon /> },
   { path: '/blocked',   label: 'Blocked IPs',     icon: <BlockIcon /> },
   { path: '/settings',  label: 'Settings',        icon: <GearIcon /> },
+  { path: '/help',      label: 'Help',            icon: <HelpIcon /> },
 ]
 
 export default function DashboardLayout() {
@@ -35,6 +38,18 @@ export default function DashboardLayout() {
   const [live, setLive] = useState({})
   const [badges, setBadges] = useState({ alerts: 0, vulns: 0 })
   const [collapsed, setCollapsed] = useState(false)
+  const [updateInfo, setUpdateInfo] = useState(null)       // { update_available, latest_sha, latest_version }
+  const [updateLog, setUpdateLog] = useState([])           // progress messages
+  const [updating, setUpdating] = useState(false)
+  const [showUpdateModal, setShowUpdateModal] = useState(false)
+
+  // Check for update on mount, then every 10 minutes
+  useEffect(() => {
+    const check = () => dashboardAPI.systemVersion().then(r => setUpdateInfo(r.data)).catch(() => {})
+    check()
+    const t = setInterval(check, 10 * 60 * 1000)
+    return () => clearInterval(t)
+  }, [])
 
   useEffect(() => {
     if (!lastMessage) return
@@ -44,7 +59,25 @@ export default function DashboardLayout() {
     if (lastMessage.type === 'ids_alert') {
       setBadges(b => ({ ...b, alerts: b.alerts + 1 }))
     }
+    if (lastMessage.type === 'update_progress') {
+      setUpdateLog(prev => [...prev, lastMessage])
+      if (lastMessage.done || lastMessage.error) {
+        setUpdating(false)
+      }
+    }
   }, [lastMessage])
+
+  const handleUpdate = async () => {
+    setUpdateLog([])
+    setUpdating(true)
+    setShowUpdateModal(true)
+    try {
+      await dashboardAPI.systemUpdate()
+    } catch {
+      setUpdating(false)
+      setUpdateLog(prev => [...prev, { step: 'Failed to start update', error: true }])
+    }
+  }
 
   const logout = () => { localStorage.clear(); navigate('/login', { replace: true }) }
 
@@ -212,7 +245,30 @@ export default function DashboardLayout() {
             <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>{currentPage}</span>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {/* Update available banner */}
+            {updateInfo?.update_available && !updating && (
+              <button onClick={handleUpdate} style={{
+                display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px',
+                borderRadius: 99, background: 'rgba(88,166,255,0.12)',
+                border: '1px solid rgba(88,166,255,0.35)', fontSize: 12, fontWeight: 600,
+                color: '#58a6ff', cursor: 'pointer', animation: 'none',
+              }}>
+                ↑ Update available · {updateInfo.latest_sha}
+              </button>
+            )}
+            {updating && (
+              <button onClick={() => setShowUpdateModal(true)} style={{
+                display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px',
+                borderRadius: 99, background: 'rgba(210,153,34,0.12)',
+                border: '1px solid rgba(210,153,34,0.35)', fontSize: 12, fontWeight: 600,
+                color: '#d29922', cursor: 'pointer',
+              }}>
+                <span style={{ width: 10, height: 10, border: '2px solid rgba(210,153,34,0.3)', borderTopColor: '#d29922', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
+                Updating…
+              </button>
+            )}
+
             {/* Live metrics */}
             <div style={{ display: 'flex', gap: 16 }}>
               <LiveChip label="CPU" value={`${(live.cpu_percent || 0).toFixed(0)}%`}
@@ -258,12 +314,89 @@ export default function DashboardLayout() {
                   <Route path="/honeypot"  element={<HoneypotPanel />} />
                   <Route path="/blocked"   element={<BlockedIPs />} />
                   <Route path="/settings"  element={<Settings />} />
+                  <Route path="/help"      element={<Help />} />
                 </Routes>
               </div>
             </motion.div>
           </AnimatePresence>
         </main>
       </div>
+
+      {/* ── Update Progress Modal ── */}
+      <AnimatePresence>
+        {showUpdateModal && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{
+              position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999,
+            }}
+            onClick={e => { if (e.target === e.currentTarget && !updating) setShowUpdateModal(false) }}>
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="card"
+              style={{ width: '100%', maxWidth: 520, padding: 24, margin: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                <div>
+                  <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>
+                    {updating ? 'Updating AI SBC Security…' : 'Update complete'}
+                  </h3>
+                  <p style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 3 }}>
+                    {updating ? 'Please wait — do not close the dashboard' : 'Reconnect if the page does not reload automatically'}
+                  </p>
+                </div>
+                {!updating && (
+                  <button onClick={() => setShowUpdateModal(false)}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              <div style={{
+                background: 'var(--bg)', border: '1px solid var(--border)',
+                borderRadius: 8, padding: '12px 14px',
+                maxHeight: 280, overflowY: 'auto',
+                fontFamily: 'var(--font-mono)', fontSize: 12,
+                display: 'flex', flexDirection: 'column', gap: 6,
+              }}>
+                {updateLog.length === 0 ? (
+                  <span style={{ color: 'var(--text-3)' }}>Starting update…</span>
+                ) : updateLog.map((entry, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                    <span style={{ flexShrink: 0, color: entry.error ? 'var(--danger)' : entry.done ? 'var(--success)' : 'var(--accent)' }}>
+                      {entry.error ? '✗' : entry.done ? '✓' : '›'}
+                    </span>
+                    <div>
+                      <span style={{ color: entry.error ? 'var(--danger)' : entry.done ? 'var(--success)' : 'var(--text-1)', fontWeight: 600 }}>
+                        {entry.step}
+                      </span>
+                      {entry.detail && (
+                        <span style={{ color: 'var(--text-3)', marginLeft: 8 }}>{entry.detail}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {updating && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-3)' }}>
+                    <span style={{ width: 10, height: 10, border: '2px solid var(--border-md)', borderTopColor: 'var(--accent)', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite', flexShrink: 0 }} />
+                    Running…
+                  </div>
+                )}
+              </div>
+
+              {!updating && updateLog.some(e => e.done) && (
+                <button
+                  onClick={() => window.location.reload()}
+                  className="btn btn-primary"
+                  style={{ width: '100%', marginTop: 16 }}>
+                  Reload dashboard
+                </button>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
@@ -294,3 +427,4 @@ function ShieldIcon() { return <svg width="16" height="16" viewBox="0 0 18 18" f
 function BlockIcon()  { return <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><circle cx="9" cy="9" r="7"/><line x1="4" y1="4" x2="14" y2="14"/></svg> }
 function HoneyIcon()  { return <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M9 2L3 5.5v7L9 16l6-3.5v-7L9 2z"/><path d="M9 2v14M3 5.5l6 3.5 6-3.5"/></svg> }
 function GearIcon()   { return <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><circle cx="9" cy="9" r="2.5"/><path d="M9 1v2M9 15v2M1 9h2M15 9h2M3.2 3.2l1.4 1.4M13.4 13.4l1.4 1.4M3.2 14.8l1.4-1.4M13.4 4.6l1.4-1.4"/></svg> }
+function HelpIcon()   { return <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><circle cx="9" cy="9" r="7"/><path d="M6.8 6.8a2.2 2.2 0 0 1 4.2.7c0 1.5-2.2 1.8-2.2 3.5"/><circle cx="9" cy="14" r="0.5" fill="currentColor"/></svg> }

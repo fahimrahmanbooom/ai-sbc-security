@@ -241,7 +241,8 @@ export default function LoginPage() {
   )
 }
 
-function InputField({ label, value, onChange, placeholder, type = 'text', autoFocus, suffix, inputMode }) {
+function InputField({ label, value, onChange, placeholder, type = 'text', autoFocus, suffix, inputMode, inputStyle }) {
+  const isNumeric = inputMode === 'numeric'
   return (
     <div style={{ marginBottom: 16 }}>
       <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-2)', marginBottom: 6 }}>
@@ -250,7 +251,20 @@ function InputField({ label, value, onChange, placeholder, type = 'text', autoFo
       <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
         <input type={type} value={value} onChange={onChange} placeholder={placeholder}
           required autoFocus={autoFocus} inputMode={inputMode}
-          className="input" style={{ width: '100%', paddingRight: suffix ? 56 : 12 }} />
+          className="input"
+          style={{
+            width: '100%',
+            paddingRight: suffix ? 56 : 14,
+            paddingLeft: 14,
+            ...(isNumeric ? {
+              textAlign: 'center',
+              letterSpacing: '0.4em',
+              fontSize: 22,
+              fontFamily: 'var(--font-mono)',
+              fontWeight: 700,
+            } : {}),
+            ...inputStyle,
+          }} />
         {suffix && <div style={{ position: 'absolute', right: 8 }}>{suffix}</div>}
       </div>
     </div>

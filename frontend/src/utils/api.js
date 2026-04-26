@@ -95,6 +95,10 @@ export const dashboardAPI = {
   // Federated Learning
   federatedStatus: () => api.get('/api/federated/status'),
   federatedEnable: (enabled) => api.post('/api/federated/enable', { enabled }),
+
+  // System update
+  systemVersion: () => api.get('/api/system/version'),
+  systemUpdate:  () => api.post('/api/system/update'),
 }
 
 // ── WebSocket ──

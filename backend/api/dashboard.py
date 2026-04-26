@@ -5,6 +5,10 @@ REST + WebSocket endpoints for the React frontend.
 import asyncio
 import json
 import logging
+import os
+import re as _re
+import subprocess
+import threading
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 
@@ -532,7 +536,6 @@ async def hardening_audit_now(current_user: User = Depends(get_current_user)):
 @router.post("/hardening/autofix")
 async def hardening_autofix(body: dict, current_user: User = Depends(get_current_user)):
     """Run the auto-fix command for a specific hardening check."""
-    import subprocess, shlex
     check_id = body.get("check_id", "")
     if not check_id:
         raise HTTPException(status_code=400, detail="check_id is required")
@@ -553,7 +556,6 @@ async def hardening_autofix(body: dict, current_user: User = Depends(get_current
 
     # Strip leading `sudo` — the service already runs as root under systemd.
     # Running sudo inside a root process with no TTY/sudoers causes PERM errors.
-    import re as _re
     clean_cmd = _re.sub(r'^\s*sudo\s+', '', fix_cmd)
 
     try:
@@ -627,3 +629,175 @@ async def federated_enable(
     else:
         await fl.stop()
     return {"enabled": enabled, "message": f"Federated learning {'enabled' if enabled else 'disabled'}"}
+
+
+# ─── System Update API ────────────────────────────────────────────────────────
+
+def _git(*args, cwd=None) -> str:
+    """Run a git command and return stripped stdout. Raises on non-zero exit."""
+    result = subprocess.run(
+        ["git"] + list(args),
+        capture_output=True, text=True, cwd=cwd or _install_dir(),
+    )
+    return result.stdout.strip()
+
+
+def _install_dir() -> str:
+    """Return the root directory of the git repo (two levels up from this file)."""
+    this = os.path.abspath(__file__)          # backend/api/dashboard.py
+    return os.path.dirname(os.path.dirname(os.path.dirname(this)))  # repo root
+
+
+@router.get("/system/version")
+async def system_version(current_user: User = Depends(get_current_user)):
+    """Compare local HEAD to origin/main and return update info."""
+    try:
+        repo = _install_dir()
+        # Fetch quietly so we can compare without changing working tree
+        subprocess.run(["git", "fetch", "origin", "main", "--quiet"],
+                       capture_output=True, cwd=repo, timeout=15)
+        local_sha  = _git("rev-parse", "HEAD", cwd=repo)
+        remote_sha = _git("rev-parse", "origin/main", cwd=repo)
+        # Short version from tag or commit count
+        try:
+            local_ver  = _git("describe", "--tags", "--always", cwd=repo)
+            remote_ver = _git("describe", "--tags", "--always", "origin/main", cwd=repo)
+        except Exception:
+            local_ver  = local_sha[:7]
+            remote_ver = remote_sha[:7]
+
+        return {
+            "current_sha":      local_sha[:7],
+            "latest_sha":       remote_sha[:7],
+            "update_available": local_sha != remote_sha,
+            "current_version":  local_ver,
+            "latest_version":   remote_ver,
+        }
+    except Exception as e:
+        logger.warning(f"Version check failed: {e}")
+        return {
+            "current_sha": "unknown", "latest_sha": "unknown",
+            "update_available": False, "current_version": "unknown",
+            "latest_version": "unknown",
+        }
+
+
+_update_lock = threading.Lock()
+
+
+@router.post("/system/update")
+async def system_update(current_user: User = Depends(get_current_user)):
+    """Pull latest code, rebuild frontend if changed, restart service."""
+    if not _update_lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="An update is already in progress")
+
+    async def _run():
+        repo = _install_dir()
+        frontend = os.path.join(repo, "frontend")
+        static   = os.path.join(repo, "backend", "static")
+
+        async def prog(step: str, detail: str = "", done: bool = False, error: bool = False):
+            await ws_manager.broadcast({
+                "type":   "update_progress",
+                "step":   step,
+                "detail": detail,
+                "done":   done,
+                "error":  error,
+                "ts":     datetime.utcnow().isoformat(),
+            })
+
+        try:
+            await prog("Checking for updates…")
+
+            # Record old HEAD before pull
+            old_sha = _git("rev-parse", "HEAD", cwd=repo)
+
+            await prog("Pulling latest code…")
+            pull = subprocess.run(
+                ["git", "pull", "origin", "main"],
+                capture_output=True, text=True, cwd=repo, timeout=60,
+            )
+            if pull.returncode != 0:
+                await prog("Git pull failed", pull.stderr[:300], error=True)
+                return
+
+            new_sha = _git("rev-parse", "HEAD", cwd=repo)
+            await prog("Code updated", f"{old_sha[:7]} → {new_sha[:7]}")
+
+            # Check if frontend source changed between old and new HEAD
+            diff = subprocess.run(
+                ["git", "diff", "--name-only", old_sha, new_sha, "--", "frontend/"],
+                capture_output=True, text=True, cwd=repo,
+            )
+            frontend_changed = bool(diff.stdout.strip()) or old_sha == new_sha
+
+            if frontend_changed:
+                await prog("Installing frontend dependencies…")
+                npm_i = subprocess.run(
+                    ["npm", "install"], capture_output=True, text=True,
+                    cwd=frontend, timeout=180,
+                )
+                if npm_i.returncode != 0:
+                    await prog("npm install failed", npm_i.stderr[:300], error=True)
+                    return
+
+                await prog("Building frontend…")
+                npm_b = subprocess.run(
+                    ["npm", "run", "build"], capture_output=True, text=True,
+                    cwd=frontend, timeout=300,
+                )
+                if npm_b.returncode != 0:
+                    await prog("Frontend build failed", npm_b.stderr[:300], error=True)
+                    return
+
+                await prog("Deploying frontend…")
+                os.makedirs(static, exist_ok=True)
+                subprocess.run(
+                    f"cp -r {frontend}/dist/* {static}/",
+                    shell=True, check=True,
+                )
+                await prog("Frontend deployed")
+            else:
+                await prog("Frontend unchanged — skipping rebuild")
+
+            # Check if backend changed
+            back_diff = subprocess.run(
+                ["git", "diff", "--name-only", old_sha, new_sha, "--", "backend/"],
+                capture_output=True, text=True, cwd=repo,
+            )
+            backend_changed = bool(back_diff.stdout.strip())
+
+            if backend_changed:
+                await prog("Installing backend dependencies…")
+                pip = subprocess.run(
+                    ["pip", "install", "-r", "requirements.txt", "--break-system-packages",
+                     "--quiet"],
+                    capture_output=True, text=True,
+                    cwd=os.path.join(repo, "backend"), timeout=180,
+                )
+                if pip.returncode != 0:
+                    await prog("pip install warning", pip.stderr[:200])
+            else:
+                await prog("Backend unchanged — skipping pip install")
+
+            await prog("Restarting service…")
+            await ws_manager.broadcast({
+                "type": "update_progress", "step": "Update complete — restarting",
+                "detail": "Dashboard will reconnect automatically in a few seconds.",
+                "done": True, "error": False, "ts": datetime.utcnow().isoformat(),
+            })
+            # Small delay so the frontend receives the final message
+            await asyncio.sleep(1.5)
+            subprocess.Popen(
+                ["systemctl", "restart", "ai-sbc-security"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        except Exception as exc:
+            await prog("Update error", str(exc)[:300], error=True)
+            logger.error(f"Update failed: {exc}")
+        finally:
+            _update_lock.release()
+
+    # Run the update in the background so the HTTP response returns immediately
+    asyncio.create_task(_run())
+    return {"status": "update_started"}

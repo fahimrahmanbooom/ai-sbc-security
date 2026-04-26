@@ -40,96 +40,111 @@ export default function AlertsPanel() {
   }, {})
 
   return (
-    <motion.div className="p-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      <div className="flex items-center justify-between mb-6">
+    <div style={{ padding: 24 }}>
+
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 8 }}>
         <div>
-          <h1 className="font-display text-lg tracking-widest" style={{ color: 'var(--accent-cyan)' }}>ALERTS</h1>
-          <p className="text-xs font-mono mt-0.5" style={{ color: 'var(--text-muted)' }}>
-            {alerts.length} alerts • real-time threat log
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>Alerts</h2>
+          <p style={{ fontSize: 13, color: 'var(--text-3)', marginTop: 3 }}>
+            {alerts.length} alert{alerts.length !== 1 ? 's' : ''} · real-time threat log
           </p>
         </div>
-        <label className="flex items-center gap-2 text-xs font-mono cursor-pointer"
-               style={{ color: 'var(--text-secondary)' }}>
-          <input type="checkbox" checked={showResolved} onChange={e => setShowResolved(e.target.checked)}
-                 className="accent-cyan-400" />
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13, color: 'var(--text-3)' }}>
+          <input type="checkbox" checked={showResolved} onChange={e => setShowResolved(e.target.checked)} />
           Show resolved
         </label>
       </div>
 
       {/* Severity filter pills */}
-      <div className="flex gap-2 mb-6 flex-wrap">
-        {['all', ...SEV_ORDER].map(sev => (
-          <motion.button key={sev} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-            onClick={() => setFilter(sev)}
-            className={`px-3 py-1 rounded-full text-xs font-mono tracking-wide transition-all ${sev === filter ? `badge-${sev === 'all' ? 'info' : sev}` : ''}`}
-            style={sev !== filter ? { background: 'rgba(255,255,255,0.04)', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)' } : {}}>
-            {sev.toUpperCase()}
-            {sev !== 'all' && counts[sev] > 0 && (
-              <span className="ml-1.5 opacity-70">{counts[sev]}</span>
-            )}
-          </motion.button>
-        ))}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 20, flexWrap: 'wrap' }}>
+        {['all', ...SEV_ORDER].map(sev => {
+          const isActive = sev === filter
+          const sevForBadge = sev === 'all' ? 'info' : sev
+          return (
+            <button key={sev} onClick={() => setFilter(sev)}
+              className={isActive ? `badge badge-${sevForBadge}` : 'btn btn-ghost'}
+              style={{
+                fontSize: 12, padding: '4px 12px', cursor: 'pointer',
+                ...(isActive ? {} : { color: 'var(--text-3)' }),
+              }}>
+              {sev.toUpperCase()}
+              {sev !== 'all' && counts[sev] > 0 && (
+                <span style={{ marginLeft: 5, opacity: 0.8, fontWeight: 700 }}>{counts[sev]}</span>
+              )}
+            </button>
+          )
+        })}
       </div>
 
       {/* Alerts list */}
       {loading ? (
-        <div className="text-center py-12 font-mono text-xs" style={{ color: 'var(--text-muted)' }}>
-          LOADING ALERTS...
+        <div className="empty-state" style={{ padding: '48px 0' }}>
+          <p style={{ color: 'var(--text-3)' }}>Loading alerts…</p>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="text-center py-12">
-          <p className="font-display text-2xl mb-2" style={{ color: 'var(--accent-cyan)' }}>CLEAR</p>
-          <p className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>No alerts in this filter</p>
+        <div className="empty-state" style={{ padding: '48px 0' }}>
+          <div style={{ fontSize: 28 }}>✓</div>
+          <p style={{ color: 'var(--success)', fontWeight: 600 }}>No alerts in this filter</p>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <AnimatePresence>
             {filtered.map((alert, i) => (
               <motion.div key={alert.id}
-                initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}
+                initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 16 }}
                 transition={{ delay: i * 0.02 }}
-                className={`rounded-xl p-4 ${alert.severity === 'critical' ? 'card-critical' : 'card-glow'}`}
-                style={{ background: 'var(--bg-card)' }}>
-                <div className="flex items-start gap-3">
+                className="card"
+                style={{
+                  padding: 16,
+                  ...(alert.severity === 'critical' ? {
+                    borderColor: 'rgba(248,81,73,0.3)',
+                    background: 'rgba(248,81,73,0.04)',
+                  } : {}),
+                }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
                   <ThreatScoreRing score={alert.threat_score} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <span className={`badge-${alert.severity} text-xs px-2 py-0.5 rounded font-mono`}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+                      <span className={`badge badge-${alert.severity}`}>
                         {alert.severity.toUpperCase()}
                       </span>
-                      <span className="text-xs font-mono px-2 py-0.5 rounded"
-                            style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--text-muted)' }}>
+                      <span style={{
+                        fontSize: 12, padding: '2px 8px', borderRadius: 6,
+                        background: 'var(--bg-surface)', border: '1px solid var(--border)',
+                        color: 'var(--text-3)',
+                      }}>
                         {alert.category}
                       </span>
                       {alert.source_ip && (
-                        <span className="text-xs font-mono" style={{ color: 'var(--accent-cyan)' }}>
+                        <span style={{ fontSize: 13, fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--accent)' }}>
                           {alert.source_ip}
                           {alert.geo_country && ` · ${alert.geo_country}`}
                         </span>
                       )}
                     </div>
-                    <p className="text-sm font-mono mb-1" style={{ color: 'var(--text-primary)' }}>
+                    <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-1)', marginBottom: 4 }}>
                       {alert.title}
                     </p>
-                    <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                    <p style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.55 }}>
                       {alert.description?.slice(0, 150)}
                     </p>
-                    <p className="text-xs mt-1 font-mono" style={{ color: 'var(--text-muted)' }}>
+                    <p style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 6, fontFamily: 'var(--font-mono)' }}>
                       {new Date(alert.timestamp).toLocaleString()}
                     </p>
                   </div>
                   {!alert.resolved && (
-                    <div className="flex flex-col gap-1.5 flex-shrink-0">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
                       {!alert.acknowledged && (
                         <button onClick={() => acknowledge(alert.id)}
-                          className="text-xs px-2 py-1 rounded font-mono transition-all"
-                          style={{ background: 'rgba(255,215,0,0.1)', color: '#ffd700', border: '1px solid rgba(255,215,0,0.2)' }}>
+                          className="btn btn-ghost btn-sm"
+                          style={{ fontSize: 12, color: '#d29922', borderColor: 'rgba(210,153,34,0.35)' }}>
                           ACK
                         </button>
                       )}
                       <button onClick={() => resolve(alert.id)}
-                        className="text-xs px-2 py-1 rounded font-mono transition-all"
-                        style={{ background: 'rgba(0,255,179,0.08)', color: '#00ffb3', border: '1px solid rgba(0,255,179,0.2)' }}>
+                        className="btn btn-success btn-sm"
+                        style={{ fontSize: 12 }}>
                         CLOSE
                       </button>
                     </div>
@@ -140,24 +155,26 @@ export default function AlertsPanel() {
           </AnimatePresence>
         </div>
       )}
-    </motion.div>
+    </div>
   )
 }
 
 function ThreatScoreRing({ score }) {
-  const norm = Math.min(10, score) / 10
-  const color = norm > 0.7 ? '#ff3d5a' : norm > 0.4 ? '#ffd700' : '#00ffb3'
+  const norm = Math.min(10, score || 0) / 10
+  const color = norm > 0.7 ? 'var(--danger)' : norm > 0.4 ? 'var(--warning)' : 'var(--success)'
+  const hexColor = norm > 0.7 ? '#f85149' : norm > 0.4 ? '#f0883e' : '#3fb950'
   const r = 14, circ = 2 * Math.PI * r
   return (
-    <div className="flex-shrink-0 w-10 h-10 relative flex items-center justify-center">
-      <svg width="40" height="40" className="-rotate-90">
-        <circle cx="20" cy="20" r={r} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="2.5" />
-        <circle cx="20" cy="20" r={r} fill="none" stroke={color} strokeWidth="2.5"
+    <div style={{ flexShrink: 0, width: 40, height: 40, position: 'relative',
+      display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <svg width="40" height="40" style={{ transform: 'rotate(-90deg)', position: 'absolute' }}>
+        <circle cx="20" cy="20" r={r} fill="none" stroke="var(--border-md)" strokeWidth="2.5" />
+        <circle cx="20" cy="20" r={r} fill="none" stroke={hexColor} strokeWidth="2.5"
                 strokeDasharray={`${norm * circ} ${circ}`}
-                style={{ transition: 'stroke-dasharray 1s ease', filter: `drop-shadow(0 0 4px ${color})` }} />
+                style={{ transition: 'stroke-dasharray 1s ease' }} />
       </svg>
-      <span className="absolute font-mono font-bold text-xs" style={{ color }}>
-        {score?.toFixed(0)}
+      <span style={{ fontSize: 11, fontWeight: 700, fontFamily: 'var(--font-mono)', color, position: 'relative' }}>
+        {(score || 0).toFixed(0)}
       </span>
     </div>
   )
