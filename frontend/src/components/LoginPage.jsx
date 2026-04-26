@@ -63,7 +63,12 @@ export default function LoginPage() {
       toast.success('Account created — sign in to continue')
       setIsRegister(false); setLoading(false)
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Registration failed')
+      const detail = err.response?.data?.detail
+      // Pydantic 422 returns detail as array of validation errors
+      const msg = Array.isArray(detail)
+        ? detail.map(d => d.msg?.replace('Value error, ', '')).join(' · ')
+        : (detail || 'Registration failed')
+      toast.error(msg)
       setLoading(false)
     }
   }
@@ -203,6 +208,11 @@ export default function LoginPage() {
                       {showPw ? 'Hide' : 'Show'}
                     </button>
                   } />
+                {isRegister && (
+                  <p style={{ fontSize: 11, color: 'var(--text-3)', marginTop: -8, marginBottom: 16 }}>
+                    Min 8 characters · at least one uppercase letter · one number
+                  </p>
+                )}
                 <SubmitBtn loading={loading} label={isRegister ? 'Create account' : 'Sign in'} />
 
                 <div style={{ marginTop: 16, textAlign: 'center' }}>
