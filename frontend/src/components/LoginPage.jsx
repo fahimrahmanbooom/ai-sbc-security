@@ -27,13 +27,24 @@ export default function LoginPage() {
   const [form, setForm] = useState({ username: '', password: '', email: '', totp: '' })
   const [qrCode, setQrCode] = useState(null)
   const [showPw, setShowPw] = useState(false)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     if (localStorage.getItem('access_token')) navigate('/', { replace: true })
   }, [])
 
+  const showError = (err) => {
+    const detail = err?.response?.data?.detail
+    const msg = Array.isArray(detail)
+      ? detail.map(d => String(d.msg || d).replace('Value error, ', '')).join(' · ')
+      : (typeof detail === 'string' ? detail : 'Something went wrong')
+    setError(msg)
+    setLoading(false)
+  }
+
   const handleLogin = async (e) => {
     e.preventDefault()
+    setError('')
     setLoading(true)
     try {
       const payload = { username: form.username, password: form.password }
@@ -47,29 +58,23 @@ export default function LoginPage() {
         const { data: totpData } = await authAPI.setupTOTP()
         setQrCode(totpData); setLoading(false); return
       }
-      toast.success('Signed in successfully')
       navigate('/', { replace: true })
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Authentication failed')
-      setLoading(false)
+      showError(err)
     }
   }
 
   const handleRegister = async (e) => {
     e.preventDefault()
+    setError('')
     setLoading(true)
     try {
       await authAPI.register({ username: form.username, email: form.email, password: form.password })
-      toast.success('Account created — sign in to continue')
-      setIsRegister(false); setLoading(false)
-    } catch (err) {
-      const detail = err.response?.data?.detail
-      // Pydantic 422 returns detail as array of validation errors
-      const msg = Array.isArray(detail)
-        ? detail.map(d => d.msg?.replace('Value error, ', '')).join(' · ')
-        : (detail || 'Registration failed')
-      toast.error(msg)
+      setError('')
+      setIsRegister(false)
       setLoading(false)
+    } catch (err) {
+      showError(err)
     }
   }
 
@@ -210,8 +215,17 @@ export default function LoginPage() {
                   } />
                 {isRegister && (
                   <p style={{ fontSize: 11, color: 'var(--text-3)', marginTop: -8, marginBottom: 16 }}>
-                    Min 8 characters · at least one uppercase letter · one number
+                    Minimum 8 characters
                   </p>
+                )}
+                {error && (
+                  <div style={{
+                    padding: '10px 14px', borderRadius: 8, marginBottom: 14,
+                    background: 'rgba(255,80,80,0.1)', border: '1px solid rgba(255,80,80,0.3)',
+                    fontSize: 13, color: '#ff6b6b', lineHeight: 1.4,
+                  }}>
+                    {error}
+                  </div>
                 )}
                 <SubmitBtn loading={loading} label={isRegister ? 'Create account' : 'Sign in'} />
 
