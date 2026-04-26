@@ -11,6 +11,17 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: false
+    sourcemap: false,
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor':   ['react', 'react-dom', 'react-router-dom'],
+          'motion':         ['framer-motion'],
+          'charts':         ['recharts'],
+          'toast':          ['react-hot-toast'],
+        }
+      }
+    }
   }
 })
