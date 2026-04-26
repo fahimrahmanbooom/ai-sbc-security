@@ -551,13 +551,18 @@ async def hardening_autofix(body: dict, current_user: User = Depends(get_current
     if not fix_cmd:
         raise HTTPException(status_code=400, detail="No fix command available for this check")
 
+    # Strip leading `sudo` — the service already runs as root under systemd.
+    # Running sudo inside a root process with no TTY/sudoers causes PERM errors.
+    import re as _re
+    clean_cmd = _re.sub(r'^\s*sudo\s+', '', fix_cmd)
+
     try:
         result = subprocess.run(
-            fix_cmd, shell=True, capture_output=True, text=True, timeout=30
+            clean_cmd, shell=True, capture_output=True, text=True, timeout=30
         )
         if result.returncode != 0:
             raise HTTPException(status_code=500,
-                detail=f"Fix command failed (exit {result.returncode}): {result.stderr[:200]}")
+                detail=f"Fix command failed (exit {result.returncode}): {result.stderr[:300]}")
         return {
             "status": "applied",
             "check_id": check_id,

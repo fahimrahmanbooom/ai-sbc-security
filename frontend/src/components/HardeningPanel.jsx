@@ -235,22 +235,21 @@ function FindingRow({ finding, expanded, onClick, onAutoFixed }) {
       background: expanded ? 'var(--bg-surface)' : 'transparent',
       cursor: 'pointer', overflow: 'hidden',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
         {/* Pass/fail indicator */}
         <span style={{
-          width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+          width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
           background: finding.passed ? 'var(--success)22' : color + '22',
           color: finding.passed ? 'var(--success)' : color,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 12, fontWeight: 900,
+          fontSize: 13, fontWeight: 900,
         }}>{finding.passed ? '✓' : '✗'}</span>
 
         {/* Title */}
-        <span style={{ flex: 1, fontSize: 13, color: 'var(--text-1)', fontWeight: finding.passed ? 400 : 600 }}>
+        <span style={{ flex: 1, fontSize: 14, color: 'var(--text-1)', fontWeight: finding.passed ? 400 : 600 }}>
           {finding.title}
         </span>
 
-        {/* Right-side metadata — all vertically centred via alignItems: center on parent */}
         {/* Severity badge */}
         {!finding.passed && (
           <span className={`badge badge-${finding.severity}`} style={{ flexShrink: 0 }}>
@@ -260,15 +259,15 @@ function FindingRow({ finding, expanded, onClick, onAutoFixed }) {
 
         {/* Category tag */}
         <span style={{
-          flexShrink: 0, fontSize: 11, color: 'var(--text-3)',
-          padding: '2px 7px', borderRadius: 4,
-          background: 'var(--bg-surface)', border: '1px solid var(--border)',
-          lineHeight: '18px',
+          flexShrink: 0, fontSize: 12, color: 'var(--text-2)',
+          padding: '3px 8px', borderRadius: 5,
+          background: 'var(--bg-surface)', border: '1px solid var(--border-md)',
+          lineHeight: '20px', fontWeight: 500,
         }}>
           {CATEGORY_ICONS[finding.category] || ''} {finding.category}
         </span>
 
-        <span style={{ fontSize: 12, color: 'var(--text-3)', flexShrink: 0 }}>{expanded ? '▲' : '▼'}</span>
+        <span style={{ fontSize: 13, color: 'var(--text-3)', flexShrink: 0 }}>{expanded ? '▲' : '▼'}</span>
       </div>
 
       <AnimatePresence>
@@ -282,14 +281,14 @@ function FindingRow({ finding, expanded, onClick, onAutoFixed }) {
               </p>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
                 <div>
-                  <div style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Current Value</div>
-                  <div style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: finding.passed ? 'var(--success)' : 'var(--danger)', fontWeight: 600 }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Current Value</div>
+                  <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', color: finding.passed ? 'var(--success)' : 'var(--danger)', fontWeight: 600 }}>
                     {finding.current_value}
                   </div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Recommended</div>
-                  <div style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--success)', fontWeight: 600 }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Recommended</div>
+                  <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', color: 'var(--success)', fontWeight: 600 }}>
                     {finding.recommended_value}
                   </div>
                 </div>
@@ -297,12 +296,12 @@ function FindingRow({ finding, expanded, onClick, onAutoFixed }) {
               {!finding.passed && finding.fix_command && (
                 <div>
                   <div style={{
-                    padding: '10px 12px', borderRadius: 'var(--radius-sm)',
+                    padding: '10px 14px', borderRadius: 'var(--radius-sm)',
                     background: 'var(--bg)', border: '1px solid var(--border)',
-                    fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--accent)',
+                    fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--accent)',
                     lineHeight: 1.6, marginBottom: 10,
                   }}>
-                    <div style={{ color: 'var(--text-3)', fontSize: 11, marginBottom: 4 }}>Fix command:</div>
+                    <div style={{ color: 'var(--text-3)', fontSize: 12, marginBottom: 4 }}>Fix command:</div>
                     {finding.fix_command}
                   </div>
                   <button
