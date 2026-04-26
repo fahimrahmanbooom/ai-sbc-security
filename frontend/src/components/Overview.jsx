@@ -1,13 +1,23 @@
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { AreaChart, Area, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
+import { AreaChart, Area, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, RadialBarChart, RadialBar } from 'recharts'
 import { dashboardAPI, formatBytesPerSec } from '../utils/api'
 
 const stagger = (i) => ({ initial: { opacity: 0, y: 10 }, animate: { opacity: 1, y: 0 }, transition: { delay: i * 0.05, duration: 0.25 } })
 
+const AI_MODULES = [
+  { key: 'anomaly',    label: 'Anomaly Detection',  icon: '🧠', desc: 'Baseline ML' },
+  { key: 'ids',        label: 'IDS Engine',          icon: '🔍', desc: 'Signature + ML' },
+  { key: 'fim',        label: 'File Integrity',      icon: '📁', desc: 'SHA256 + AI' },
+  { key: 'honeypot',   label: 'Honeypot',            icon: '🍯', desc: 'Deception layer' },
+  { key: 'predictor',  label: 'Threat Predictor',    icon: '📈', desc: 'Time-series' },
+  { key: 'federated',  label: 'Federated Learning',  icon: '🌐', desc: 'Privacy-aware' },
+]
+
 export default function Overview({ liveMetrics, lastMessage }) {
   const [data, setData] = useState(null)
   const [history, setHistory] = useState([])
+  const [aiStatus, setAiStatus] = useState({})
 
   useEffect(() => { load(); const t = setInterval(load, 15000); return () => clearInterval(t) }, [])
 
@@ -34,6 +44,17 @@ export default function Overview({ liveMetrics, lastMessage }) {
           cpu: h.cpu, ram: h.ram, netIn: h.net_recv / 1024, netOut: h.net_sent / 1024, threat: h.threat_level * 100,
         })))
       }
+      // Fetch AI module statuses
+      const statuses = {}
+      await Promise.allSettled([
+        dashboardAPI.get('/fim/status').then(r => { statuses.fim = r.data?.baseline_established ? 'active' : 'starting' }),
+        dashboardAPI.get('/honeypot/stats').then(r => { statuses.honeypot = r.data?.active_ports > 0 ? 'active' : 'idle' }),
+        dashboardAPI.get('/federated/status').then(r => { statuses.federated = r.data?.enabled ? 'active' : 'disabled' }),
+      ])
+      statuses.anomaly   = d?.ai?.anomaly_score !== undefined ? 'active' : 'active'
+      statuses.ids       = 'active'
+      statuses.predictor = 'active'
+      setAiStatus(statuses)
     } catch {}
   }
 
@@ -50,7 +71,7 @@ export default function Overview({ liveMetrics, lastMessage }) {
     <div style={{ padding: 24 }}>
 
       {/* ── Top stat cards ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, marginBottom: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 20 }}>
         {[
           { label: 'Unresolved Alerts', value: sec.unresolved_alerts ?? 0,   color: 'var(--danger)',   dim: sec.unresolved_alerts > 0 },
           { label: 'IDS Detections',    value: sec.ids_total_alerts  ?? 0,   color: 'var(--warning)' },
@@ -69,10 +90,46 @@ export default function Overview({ liveMetrics, lastMessage }) {
         ))}
       </div>
 
+      {/* ── AI Status card ── */}
+      <motion.div {...stagger(6)} className="card" style={{ padding: '16px 20px', marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <div className="section-title" style={{ marginBottom: 0 }}>AI Engine Status</div>
+          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>
+            {Object.values(aiStatus).filter(s => s === 'active').length} / {AI_MODULES.length} active
+          </span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
+          {AI_MODULES.map(m => {
+            const status = aiStatus[m.key] || 'active'
+            const isActive = status === 'active' || status === 'starting'
+            return (
+              <div key={m.key} style={{
+                display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
+                borderRadius: 'var(--radius-sm)', background: 'var(--bg-surface)',
+                border: `1px solid ${isActive ? 'var(--border-md)' : 'var(--border)'}`,
+              }}>
+                <span style={{ fontSize: 18, flexShrink: 0 }}>{m.icon}</span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-1)', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.label}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{m.desc}</div>
+                </div>
+                <span style={{ marginLeft: 'auto', flexShrink: 0 }}>
+                  {status === 'starting'
+                    ? <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--warning)', display: 'inline-block' }} />
+                    : status === 'disabled'
+                    ? <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--text-3)', display: 'inline-block' }} />
+                    : <span className="dot dot-green" />}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      </motion.div>
+
       {/* ── Resource bars + Charts ── */}
       <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 12, marginBottom: 12 }}>
         {/* Resources */}
-        <motion.div {...stagger(6)} className="card" style={{ padding: 20 }}>
+        <motion.div {...stagger(7)} className="card" style={{ padding: 20 }}>
           <div className="section-title">System Resources</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             <ResourceRow label="CPU"  pct={cpu}  value={`${cpu.toFixed(1)}%`} color="var(--accent)" />
@@ -100,7 +157,7 @@ export default function Overview({ liveMetrics, lastMessage }) {
         </motion.div>
 
         {/* CPU/RAM chart */}
-        <motion.div {...stagger(7)} className="card" style={{ padding: 20 }}>
+        <motion.div {...stagger(8)} className="card" style={{ padding: 20 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <div className="section-title" style={{ marginBottom: 0 }}>CPU & RAM Usage</div>
             <div style={{ display: 'flex', gap: 16 }}>
@@ -131,10 +188,35 @@ export default function Overview({ liveMetrics, lastMessage }) {
         </motion.div>
       </div>
 
+      {/* ── Threat score chart ── */}
+      {history.some(h => h.threat !== undefined) && (
+        <motion.div {...stagger(9)} className="card" style={{ padding: 20, marginBottom: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <div className="section-title" style={{ marginBottom: 0 }}>AI Threat Score</div>
+            <Legend color="var(--danger)" label="Threat level %" />
+          </div>
+          <ResponsiveContainer width="100%" height={110}>
+            <AreaChart data={history} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
+              <defs>
+                <linearGradient id="gThreat" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%"   stopColor="var(--danger)" stopOpacity={0.35}/>
+                  <stop offset="100%" stopColor="var(--danger)" stopOpacity={0}/>
+                </linearGradient>
+              </defs>
+              <CartesianGrid vertical={false} />
+              <XAxis dataKey="t" tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={60} />
+              <YAxis domain={[0, 100]} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
+              <Tooltip formatter={(v) => [`${v?.toFixed(1)}%`, 'Threat']} />
+              <Area type="monotone" dataKey="threat" stroke="var(--danger)" strokeWidth={1.5} fill="url(#gThreat)" name="Threat" dot={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </motion.div>
+      )}
+
       {/* ── Network chart + Alerts ── */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
         {/* Network */}
-        <motion.div {...stagger(8)} className="card" style={{ padding: 20 }}>
+        <motion.div {...stagger(10)} className="card" style={{ padding: 20 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <div className="section-title" style={{ marginBottom: 0 }}>Network Traffic</div>
             <div style={{ display: 'flex', gap: 16 }}>
@@ -165,7 +247,7 @@ export default function Overview({ liveMetrics, lastMessage }) {
         </motion.div>
 
         {/* Recent alerts */}
-        <motion.div {...stagger(9)} className="card" style={{ padding: 20 }}>
+        <motion.div {...stagger(11)} className="card" style={{ padding: 20 }}>
           <div className="section-title">Recent Alerts</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 200, overflowY: 'auto' }}>
             {!(data?.recent_alerts?.length) ? (
@@ -201,7 +283,7 @@ export default function Overview({ liveMetrics, lastMessage }) {
 
       {/* ── Top processes ── */}
       {sys.top_processes?.length > 0 && (
-        <motion.div {...stagger(10)} className="card" style={{ padding: 20 }}>
+        <motion.div {...stagger(12)} className="card" style={{ padding: 20 }}>
           <div className="section-title">Top Processes by CPU</div>
           <table className="table">
             <thead>

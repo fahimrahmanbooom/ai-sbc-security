@@ -93,7 +93,7 @@ body {
   background: var(--bg);
   color: var(--text-1);
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -137,7 +137,7 @@ body {
 /* ── Button ─────────────────────────────────────────────────────────────────── */
 .btn {
   display: inline-flex; align-items: center; justify-content: center;
-  gap: 6px; font-size: 13px; font-weight: 500; font-family: var(--font-sans);
+  gap: 6px; font-size: 14px; font-weight: 500; font-family: var(--font-sans);
   border-radius: var(--radius-md); padding: 6px 14px; cursor: pointer;
   border: 1px solid transparent; transition: all 0.15s; white-space: nowrap;
   text-decoration: none; outline: none;
@@ -163,13 +163,13 @@ body {
   background: var(--success-muted); color: var(--success); border-color: rgba(63,185,80,0.25);
 }
 
-.btn-sm  { padding: 4px 10px; font-size: 12px; }
-.btn-lg  { padding: 9px 20px; font-size: 15px; }
+.btn-sm  { padding: 4px 10px; font-size: 13px; }
+.btn-lg  { padding: 9px 20px; font-size: 16px; }
 .btn-icon{ padding: 6px; border-radius: var(--radius-sm); }
 
 /* ── Input ──────────────────────────────────────────────────────────────────── */
 .input {
-  width: 100%; padding: 8px 12px; font-size: 13px; font-family: var(--font-sans);
+  width: 100%; padding: 8px 12px; font-size: 14px; font-family: var(--font-sans);
   background: var(--bg-input); color: var(--text-1);
   border: 1px solid var(--border-md); border-radius: var(--radius-md);
   outline: none; transition: border-color 0.15s, box-shadow 0.15s;
@@ -209,7 +209,7 @@ body {
 .nav-item {
   display: flex; align-items: center; gap: 10px;
   padding: 7px 10px; border-radius: var(--radius-md);
-  font-size: 13px; font-weight: 500; color: var(--text-2);
+  font-size: 14px; font-weight: 500; color: var(--text-2);
   cursor: pointer; transition: background 0.12s, color 0.12s;
   text-decoration: none; white-space: nowrap; overflow: hidden;
   position: relative;
@@ -227,9 +227,9 @@ body {
 }
 
 /* ── Table ──────────────────────────────────────────────────────────────────── */
-.table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .table th {
-  text-align: left; padding: 8px 12px; font-size: 11px; font-weight: 600;
+  text-align: left; padding: 8px 12px; font-size: 12px; font-weight: 600;
   color: var(--text-3); letter-spacing: 0.05em; text-transform: uppercase;
   border-bottom: 1px solid var(--border); white-space: nowrap;
 }
@@ -242,12 +242,12 @@ body {
 .table td.mono { font-family: var(--font-mono); font-size: 12px; color: var(--text-1); }
 
 /* ── Metric card number ─────────────────────────────────────────────────────── */
-.metric-value { font-size: 28px; font-weight: 700; line-height: 1; letter-spacing: -0.02em; }
-.metric-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
+.metric-value { font-size: 30px; font-weight: 700; line-height: 1; letter-spacing: -0.02em; }
+.metric-label { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
 
 /* ── Section title ──────────────────────────────────────────────────────────── */
 .section-title {
-  font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+  font-size: 12px; font-weight: 600; letter-spacing: 0.08em;
   text-transform: uppercase; color: var(--text-3); margin-bottom: 12px;
 }
 

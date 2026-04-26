@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { dashboardAPI } from '../utils/api'
+import toast from 'react-hot-toast'
 
 const stagger = (i) => ({ initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, transition: { delay: i * 0.04, duration: 0.22 } })
 
@@ -198,7 +199,8 @@ export default function HardeningPanel() {
             {filtered.map((finding, i) => (
               <FindingRow key={finding.check_id || i} finding={finding}
                 expanded={expandedId === finding.check_id}
-                onClick={() => setExpandedId(expandedId === finding.check_id ? null : finding.check_id)} />
+                onClick={() => setExpandedId(expandedId === finding.check_id ? null : finding.check_id)}
+                onAutoFixed={load} />
             ))}
           </div>
         )}
@@ -207,22 +209,40 @@ export default function HardeningPanel() {
   )
 }
 
-function FindingRow({ finding, expanded, onClick }) {
+function FindingRow({ finding, expanded, onClick, onAutoFixed }) {
   const color = SEV_COLOR[finding.severity] || 'var(--text-3)'
+  const [fixing, setFixing] = useState(false)
+
+  const handleAutoFix = async (e) => {
+    e.stopPropagation()
+    if (!window.confirm(`Apply automatic fix for "${finding.title}"?\n\nCommand: ${finding.fix_command}\n\nThis will modify system configuration.`)) return
+    setFixing(true)
+    try {
+      await dashboardAPI.post('/hardening/autofix', { check_id: finding.check_id })
+      toast.success(`Fix applied: ${finding.title}`)
+      if (onAutoFixed) onAutoFixed()
+    } catch (err) {
+      const msg = err?.response?.data?.detail || 'Auto-fix failed'
+      toast.error(msg)
+    } finally {
+      setFixing(false)
+    }
+  }
+
   return (
     <div onClick={onClick} style={{
       borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
       background: expanded ? 'var(--bg-surface)' : 'transparent',
       cursor: 'pointer', overflow: 'hidden',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px' }}>
         {/* Pass/fail indicator */}
         <span style={{
-          width: 20, height: 20, borderRadius: '50%',
+          width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
           background: finding.passed ? 'var(--success)22' : color + '22',
           color: finding.passed ? 'var(--success)' : color,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 12, fontWeight: 900, flexShrink: 0,
+          fontSize: 12, fontWeight: 900,
         }}>{finding.passed ? '✓' : '✗'}</span>
 
         {/* Title */}
@@ -230,15 +250,25 @@ function FindingRow({ finding, expanded, onClick }) {
           {finding.title}
         </span>
 
+        {/* Right-side metadata — all vertically centred via alignItems: center on parent */}
+        {/* Severity badge */}
+        {!finding.passed && (
+          <span className={`badge badge-${finding.severity}`} style={{ flexShrink: 0 }}>
+            {finding.severity}
+          </span>
+        )}
+
         {/* Category tag */}
-        <span style={{ fontSize: 10, color: 'var(--text-3)', padding: '2px 6px', borderRadius: 4, background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
+        <span style={{
+          flexShrink: 0, fontSize: 11, color: 'var(--text-3)',
+          padding: '2px 7px', borderRadius: 4,
+          background: 'var(--bg-surface)', border: '1px solid var(--border)',
+          lineHeight: '18px',
+        }}>
           {CATEGORY_ICONS[finding.category] || ''} {finding.category}
         </span>
 
-        {/* Severity badge */}
-        {!finding.passed && <span className={`badge badge-${finding.severity}`}>{finding.severity}</span>}
-
-        <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{expanded ? '▲' : '▼'}</span>
+        <span style={{ fontSize: 12, color: 'var(--text-3)', flexShrink: 0 }}>{expanded ? '▲' : '▼'}</span>
       </div>
 
       <AnimatePresence>
@@ -247,32 +277,43 @@ function FindingRow({ finding, expanded, onClick }) {
             exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }}
             style={{ overflow: 'hidden' }}>
             <div style={{ padding: '12px 16px 16px', borderTop: '1px solid var(--border)' }}>
-              <p style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 14, lineHeight: 1.65 }}>
+              <p style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 14, lineHeight: 1.65 }}>
                 {finding.description}
               </p>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
                 <div>
-                  <div style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Current Value</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Current Value</div>
                   <div style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: finding.passed ? 'var(--success)' : 'var(--danger)', fontWeight: 600 }}>
                     {finding.current_value}
                   </div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Recommended</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Recommended</div>
                   <div style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--success)', fontWeight: 600 }}>
                     {finding.recommended_value}
                   </div>
                 </div>
               </div>
               {!finding.passed && finding.fix_command && (
-                <div style={{
-                  padding: '10px 12px', borderRadius: 'var(--radius-sm)',
-                  background: 'var(--bg)', border: '1px solid var(--border)',
-                  fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--accent)',
-                  lineHeight: 1.6,
-                }}>
-                  <div style={{ color: 'var(--text-3)', fontSize: 10, marginBottom: 4 }}>Fix command:</div>
-                  {finding.fix_command}
+                <div>
+                  <div style={{
+                    padding: '10px 12px', borderRadius: 'var(--radius-sm)',
+                    background: 'var(--bg)', border: '1px solid var(--border)',
+                    fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--accent)',
+                    lineHeight: 1.6, marginBottom: 10,
+                  }}>
+                    <div style={{ color: 'var(--text-3)', fontSize: 11, marginBottom: 4 }}>Fix command:</div>
+                    {finding.fix_command}
+                  </div>
+                  <button
+                    onClick={handleAutoFix}
+                    disabled={fixing}
+                    className="btn btn-success btn-sm"
+                    style={{ fontSize: 12 }}>
+                    {fixing
+                      ? <><span style={{ width: 11, height: 11, border: '2px solid rgba(63,185,80,0.3)', borderTopColor: 'var(--success)', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} /> Applying…</>
+                      : '⚡ Auto Fix'}
+                  </button>
                 </div>
               )}
             </div>

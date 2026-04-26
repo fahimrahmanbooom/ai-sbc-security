@@ -177,7 +177,7 @@ class ModelSerializer:
 # ── Federated client ───────────────────────────────────────────────────────────
 @dataclass
 class FLState:
-    enabled: bool = False
+    enabled: bool = True
     last_upload: float = 0.0
     last_download: float = 0.0
     total_uploads: int = 0

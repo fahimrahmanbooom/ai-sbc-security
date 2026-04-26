@@ -51,7 +51,7 @@ export default function DashboardLayout() {
   const currentPage = NAV.find(n => n.exact ? location.pathname === n.path : location.pathname.startsWith(n.path))?.label || ''
 
   return (
-    <div style={{ display: 'flex', height: '100vh', background: 'var(--bg)' }}>
+    <div style={{ display: 'flex', height: '100vh', background: 'var(--bg)', position: 'relative' }}>
 
       {/* ── Sidebar ── */}
       <motion.aside
@@ -60,7 +60,7 @@ export default function DashboardLayout() {
         style={{
           flexShrink: 0, display: 'flex', flexDirection: 'column',
           background: 'var(--bg-surface)', borderRight: '1px solid var(--border)',
-          overflow: 'hidden', position: 'relative',
+          overflow: 'hidden',
         }}
       >
         {/* Logo row */}
@@ -182,18 +182,22 @@ export default function DashboardLayout() {
           </button>
         </div>
 
-        {/* Collapse toggle */}
-        <button onClick={() => setCollapsed(c => !c)}
-          style={{
-            position: 'absolute', bottom: 120, right: -11,
-            width: 22, height: 22, borderRadius: '50%', border: '1px solid var(--border-md)',
-            background: 'var(--bg-card)', cursor: 'pointer', display: 'flex',
-            alignItems: 'center', justifyContent: 'center', zIndex: 10,
-            color: 'var(--text-3)', fontSize: 11,
-          }}>
-          {collapsed ? '›' : '‹'}
-        </button>
       </motion.aside>
+
+      {/* ── Collapse toggle (outside sidebar to avoid overflow:hidden clipping) ── */}
+      <motion.button
+        onClick={() => setCollapsed(c => !c)}
+        animate={{ left: collapsed ? 56 - 11 : 220 - 11 }}
+        transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+        style={{
+          position: 'absolute', bottom: 120,
+          width: 22, height: 22, borderRadius: '50%', border: '1px solid var(--border-md)',
+          background: 'var(--bg-card)', cursor: 'pointer', display: 'flex',
+          alignItems: 'center', justifyContent: 'center', zIndex: 20,
+          color: 'var(--text-3)', fontSize: 11,
+        }}>
+        {collapsed ? '›' : '‹'}
+      </motion.button>
 
       {/* ── Main ── */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>

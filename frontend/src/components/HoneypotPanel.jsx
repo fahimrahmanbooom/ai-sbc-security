@@ -69,7 +69,7 @@ export default function HoneypotPanel() {
       </div>
 
       {/* Stat cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
         {[
           { label: 'Total Probes',    value: (s.total_probes ?? 0).toLocaleString(),  color: 'var(--accent)' },
           { label: 'Unique IPs',      value: (s.unique_ips ?? 0).toLocaleString(),    color: 'var(--warning)' },

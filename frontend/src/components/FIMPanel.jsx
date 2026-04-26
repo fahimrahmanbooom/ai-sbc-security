@@ -73,7 +73,7 @@ export default function FIMPanel() {
       </div>
 
       {/* Stat cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12, marginBottom: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 20 }}>
         {[
           { label: 'Files Watched',    value: (stats.total_files_watched ?? 0).toLocaleString(), color: 'var(--accent)' },
           { label: 'Total Events',     value: (stats.total_events ?? 0).toLocaleString(),        color: 'var(--text-1)' },

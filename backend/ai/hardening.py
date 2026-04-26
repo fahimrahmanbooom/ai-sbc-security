@@ -624,8 +624,16 @@ def generate_ai_summary(report_data: dict) -> Tuple[str, List[str]]:
 
 # ── Score calculator ───────────────────────────────────────────────────────────
 def calculate_score(findings: List[Finding]) -> Tuple[int, str]:
-    total_deduction = sum(f.points_impact for f in findings if not f.passed)
-    score = max(0, 100 - total_deduction)
+    # Proportional: score = 100 * (1 - deducted / total_possible)
+    # This avoids 0/100 when total deductions exceed 100 points
+    total_possible = sum(f.points_impact for f in findings if f.points_impact > 0)
+    total_deducted = sum(f.points_impact for f in findings if not f.passed and f.points_impact > 0)
+
+    if total_possible == 0:
+        score = 100
+    else:
+        score = round(100 * (1 - total_deducted / total_possible))
+        score = max(0, min(100, score))
 
     grade = (
         "A+" if score >= 95

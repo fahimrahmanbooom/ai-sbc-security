@@ -529,6 +529,46 @@ async def hardening_audit_now(current_user: User = Depends(get_current_user)):
     }
 
 
+@router.post("/hardening/autofix")
+async def hardening_autofix(body: dict, current_user: User = Depends(get_current_user)):
+    """Run the auto-fix command for a specific hardening check."""
+    import subprocess, shlex
+    check_id = body.get("check_id", "")
+    if not check_id:
+        raise HTTPException(status_code=400, detail="check_id is required")
+
+    advisor = get_hardening_advisor()
+    report = advisor.get_last_report()
+    if not report:
+        raise HTTPException(status_code=404, detail="No audit report available. Run an audit first.")
+
+    findings = report.get("findings", [])
+    finding = next((f for f in findings if f.get("check_id") == check_id), None)
+    if not finding:
+        raise HTTPException(status_code=404, detail=f"Check '{check_id}' not found in last report")
+
+    fix_cmd = finding.get("fix_command", "").strip()
+    if not fix_cmd:
+        raise HTTPException(status_code=400, detail="No fix command available for this check")
+
+    try:
+        result = subprocess.run(
+            fix_cmd, shell=True, capture_output=True, text=True, timeout=30
+        )
+        if result.returncode != 0:
+            raise HTTPException(status_code=500,
+                detail=f"Fix command failed (exit {result.returncode}): {result.stderr[:200]}")
+        return {
+            "status": "applied",
+            "check_id": check_id,
+            "stdout": result.stdout[:500],
+        }
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="Fix command timed out (30s limit)")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ─── Honeypot API ─────────────────────────────────────────────────────────────
 
 @router.get("/honeypot/stats")
