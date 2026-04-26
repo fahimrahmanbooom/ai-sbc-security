@@ -1,15 +1,7 @@
 <div align="center">
 
-```
-    ###    ###      ####  ####   ####       ###
-   ## ##    ##      ##   ## ##  ##  ##     ## ##
-  ##   ##   ##      ####  ##  ## ##         ##   ##
-  #######   ##      ##    #####  ##         #######
-  ##   ##   ##      ##    ## ##  ##  ##     ##   ##
-  ##   ##  ####    ####  ##   ##  ####     ##   ##
-
-       S E C U R I T Y   ·   A I   E D I T I O N
-```
+<h1>🛡️ AI SBC Security</h1>
+<h3>S E C U R I T Y &nbsp;·&nbsp; A I &nbsp;E D I T I O N</h3>
 
 **AI-powered security monitoring for Single Board Computers & Linux servers**
 
