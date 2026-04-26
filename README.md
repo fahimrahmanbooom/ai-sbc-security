@@ -13,6 +13,8 @@
 [![Raspberry Pi](https://img.shields.io/badge/Raspberry%20Pi-✓-A22846.svg?style=flat-square&logo=raspberrypi)](https://raspberrypi.org)
 [![x86_64](https://img.shields.io/badge/x86__64-✓-blue.svg?style=flat-square)](https://en.wikipedia.org/wiki/X86-64)
 
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/P5P46VPK7)
+
 </div>
 
 ---
@@ -246,40 +248,40 @@ The backend exposes a full REST API. Interactive docs at `http://<device>:7443/a
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    AI SBC Security                           │
-│                                                             │
-│  ┌──────────────┐    ┌─────────────────────────────────┐   │
-│  │   React UI   │◄──►│         FastAPI Backend          │   │
-│  │  Framer Motion│   │                                 │   │
-│  │  Recharts    │    │  ┌──────────┐  ┌─────────────┐  │   │
-│  │  WebSocket   │    │  │   Auth   │  │  Dashboard  │  │   │
-│  └──────────────┘    │  │JWT + TOTP│  │   API +WS   │  │   │
-│                      │  └──────────┘  └─────────────┘  │   │
-│                      │                                 │   │
-│                      │  ┌──────────────────────────┐   │   │
-│                      │  │       AI Engine           │   │   │
-│                      │  │  • Isolation Forest       │   │   │
-│                      │  │  • Hybrid IDS (12 rules)  │   │   │
-│                      │  │  • Log Correlator         │   │   │
-│                      │  │  • Holt-Winters Predictor │   │   │
-│                      │  └──────────────────────────┘   │   │
-│                      │                                 │   │
-│                      │  ┌──────────────────────────┐   │   │
-│                      │  │       Monitors            │   │   │
-│                      │  │  • System (psutil)        │   │   │
-│                      │  │  • Network (connections)  │   │   │
-│                      │  │  • Log Watcher (inotify)  │   │   │
-│                      │  └──────────────────────────┘   │   │
-│                      │                                 │   │
-│                      │  ┌──────────────────────────┐   │   │
-│                      │  │    SQLite Database        │   │   │
-│                      │  │  Alerts · Metrics · Users │   │   │
-│                      │  │  Blocked IPs · Audit Log  │   │   │
-│                      │  └──────────────────────────┘   │   │
-│                      └─────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    Browser["🌐 Browser\nReact 18 + Recharts\nFramer Motion + WebSocket"]
+
+    subgraph Backend["FastAPI Backend"]
+        Auth["🔐 Auth\nJWT + TOTP 2FA"]
+        API["📡 Dashboard API\nREST + WebSocket"]
+
+        subgraph AI["🤖 AI Engine"]
+            IF["Isolation Forest\nAnomaly Detection"]
+            IDS["Hybrid IDS\n12 Attack Categories"]
+            LC["Log Correlator\nCross-source Intel"]
+            HW["Holt-Winters\nThreat Predictor"]
+            FIM["File Integrity\nSHA256 + ML"]
+            HP["AI Honeypot\nDeception Layer"]
+            FL["Federated Learning\nPrivacy-aware"]
+        end
+
+        subgraph Monitors["📊 Monitors"]
+            SYS["System Monitor\npsutil"]
+            NET["Network Monitor\nConnections"]
+            LOG["Log Watcher\ninotify"]
+        end
+
+        DB["🗄️ SQLite\nAlerts · Metrics · Users\nBlocked IPs · Audit Log"]
+    end
+
+    Browser <-->|"WebSocket / REST"| Auth
+    Browser <-->|"WebSocket / REST"| API
+    Auth --> DB
+    API --> DB
+    Monitors --> AI
+    AI --> API
+    AI --> DB
 ```
 
 ---

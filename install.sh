@@ -611,17 +611,18 @@ smart_update() {
     cd "$INSTALL_DIR"
 
     # Snapshot state before pull
+    # Use git ls-tree WITH blob hashes (not --name-only) so file modifications are detected
     OLD_REQ=$(git show HEAD:requirements.txt 2>/dev/null | md5sum)
-    OLD_FE=$(git ls-tree -r HEAD --name-only | grep '^frontend/src' | sort | md5sum)
-    OLD_BE=$(git ls-tree -r HEAD --name-only | grep '^backend/' | sort | md5sum)
+    OLD_FE=$(git ls-tree -r HEAD frontend/src 2>/dev/null | md5sum)
+    OLD_BE=$(git ls-tree -r HEAD backend/ 2>/dev/null | md5sum)
 
     info "Pulling latest changes from GitHub..."
     git pull origin main --quiet
     echo ""
 
     NEW_REQ=$(git show HEAD:requirements.txt 2>/dev/null | md5sum)
-    NEW_FE=$(git ls-tree -r HEAD --name-only | grep '^frontend/src' | sort | md5sum)
-    NEW_BE=$(git ls-tree -r HEAD --name-only | grep '^backend/' | sort | md5sum)
+    NEW_FE=$(git ls-tree -r HEAD frontend/src 2>/dev/null | md5sum)
+    NEW_BE=$(git ls-tree -r HEAD backend/ 2>/dev/null | md5sum)
 
     CHANGED=0
 
