@@ -12,6 +12,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.exceptions import RequestValidationError
 
 from .database.db import init_db, AsyncSessionLocal, Alert, MetricSnapshot
 from .auth.routes import router as auth_router
@@ -283,6 +284,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Convert Pydantic validation errors to a plain string so the frontend can display them."""
+    msgs = []
+    for err in exc.errors():
+        msg = str(err.get("msg", "Validation error")).replace("Value error, ", "")
+        field = err.get("loc", [])[-1] if err.get("loc") else ""
+        msgs.append(f"{field}: {msg}" if field and field != "body" else msg)
+    return JSONResponse(status_code=422, content={"detail": " · ".join(msgs)})
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
