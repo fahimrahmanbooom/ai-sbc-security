@@ -260,20 +260,19 @@ function FindingRow({ finding, expanded, onClick, onAutoFixed }) {
           fontSize: 13, fontWeight: 900,
         }}>{finding.passed ? '✓' : '✗'}</span>
 
-        {/* Title */}
-        <span style={{ flex: 1, fontSize: 14, color: 'var(--text-1)', fontWeight: finding.passed ? 400 : 600 }}>
-          {finding.title}
-        </span>
-
-        {/* Severity badge — fixed-width column, left-aligned so every badge
-            starts at the same X regardless of label length */}
-        <span style={{ flexShrink: 0, width: 82, display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
+        {/* Title + badge stacked — badge sits under the title, left-aligned */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, color: 'var(--text-1)', fontWeight: finding.passed ? 400 : 600, lineHeight: 1.35 }}>
+            {finding.title}
+          </div>
           {!finding.passed && (
-            <span className={`badge badge-${finding.severity}`}>
-              {finding.severity}
-            </span>
+            <div style={{ marginTop: 4 }}>
+              <span className={`badge badge-${finding.severity}`}>
+                {finding.severity}
+              </span>
+            </div>
           )}
-        </span>
+        </div>
 
         {/* Category tag */}
         <span style={{
