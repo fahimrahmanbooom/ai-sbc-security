@@ -1,0 +1,223 @@
+#!/usr/bin/env bash
+# AI SBC Security — CLI helper
+# This file lives in the repo root so 'aisbc -up' can self-update it.
+set -uo pipefail
+
+SERVICE_NAME="ai-sbc-security"
+INSTALL_DIR="/opt/ai-sbc-security"
+
+_bold='\033[1m'; _green='\033[1;32m'; _cyan='\033[1;36m'
+_yellow='\033[1;33m'; _red='\033[1;31m'; _dim='\033[2m'; _reset='\033[0m'
+
+ok()   { printf "  ${_green}✓${_reset}  %s\n" "$1"; }
+info() { printf "  ${_cyan}·${_reset}  %s\n" "$1"; }
+warn() { printf "  ${_yellow}⚠${_reset}  ${_yellow}%s${_reset}\n" "$1"; }
+err()  { printf "  ${_red}✗${_reset}  ${_red}%s${_reset}\n" "$1"; }
+skip() { printf "  ${_dim}↷  %s — skipped (no changes)${_reset}\n" "$1"; }
+sep()  { printf "  ${_dim}%s${_reset}\n" "────────────────────────────────────────────"; }
+
+# ── smart_update ──────────────────────────────────────────────────────────────
+smart_update() {
+    if [ ! -d "$INSTALL_DIR/.git" ]; then
+        err "Install directory not found at $INSTALL_DIR"
+        echo "  Run the full installer first:"
+        echo "    curl -sSL https://raw.githubusercontent.com/fahimrahmanbooom/ai-sbc-security/main/install.sh | bash"
+        exit 1
+    fi
+
+    cd "$INSTALL_DIR" || exit 1
+
+    echo ""
+    info "Fetching latest info from GitHub..."
+
+    # Fetch without touching the working tree — this never fails silently
+    if ! git fetch origin main 2>&1; then
+        err "git fetch failed — check internet connectivity and try again"
+        exit 1
+    fi
+
+    LOCAL_SHA=$(git rev-parse HEAD 2>/dev/null)
+    REMOTE_SHA=$(git rev-parse origin/main 2>/dev/null)
+
+    if [ -z "$LOCAL_SHA" ] || [ -z "$REMOTE_SHA" ]; then
+        err "Could not read git commit SHAs — repository may be corrupted"
+        exit 1
+    fi
+
+    LOCAL_SHORT="${LOCAL_SHA:0:7}"
+    REMOTE_SHORT="${REMOTE_SHA:0:7}"
+
+    if [ "$LOCAL_SHA" = "$REMOTE_SHA" ]; then
+        echo ""
+        ok "Already up to date  ($LOCAL_SHORT)"
+        echo ""
+        exit 0
+    fi
+
+    echo ""
+    info "Update found: $LOCAL_SHORT → $REMOTE_SHORT"
+
+    # Identify what changed BEFORE merging so we know what to rebuild
+    CHANGED_FILES=$(git diff --name-only HEAD origin/main 2>/dev/null || true)
+
+    FE_CHANGED=0;  BE_CHANGED=0;  REQ_CHANGED=0;  CLI_CHANGED=0
+    echo "$CHANGED_FILES" | grep -q "^frontend/"    && FE_CHANGED=1  || true
+    echo "$CHANGED_FILES" | grep -q "^backend/"     && BE_CHANGED=1  || true
+    echo "$CHANGED_FILES" | grep -q "requirements"  && REQ_CHANGED=1 || true
+    echo "$CHANGED_FILES" | grep -q "^aisbc$\|^install\.sh" && CLI_CHANGED=1 || true
+
+    echo ""
+    info "Changed files:"
+    echo "$CHANGED_FILES" | sed 's/^/      /'
+    sep
+    echo ""
+
+    # ── Pull ────────────────────────────────────────────────────────────────
+    info "Pulling changes..."
+    if ! git pull origin main; then
+        err "git pull failed — manual intervention may be needed"
+        echo "  Try: cd $INSTALL_DIR && git pull origin main"
+        exit 1
+    fi
+    ok "Code updated  $LOCAL_SHORT → $REMOTE_SHORT"
+    echo ""
+
+    # ── Self-update CLI binary ───────────────────────────────────────────────
+    if [ "$CLI_CHANGED" -eq 1 ] && [ -f "$INSTALL_DIR/aisbc" ]; then
+        cp "$INSTALL_DIR/aisbc" /usr/local/bin/aisbc
+        chmod +x /usr/local/bin/aisbc
+        ok "aisbc CLI self-updated"
+    fi
+
+    # ── Python packages ──────────────────────────────────────────────────────
+    if [ "$REQ_CHANGED" -eq 1 ]; then
+        info "requirements.txt changed — updating Python packages..."
+        if "$INSTALL_DIR/venv/bin/pip" install -r requirements.txt -q 2>&1; then
+            ok "Python packages updated"
+        else
+            warn "pip install had warnings — continuing"
+        fi
+    else
+        skip "Python packages"
+    fi
+
+    # ── Frontend ─────────────────────────────────────────────────────────────
+    if [ "$FE_CHANGED" -eq 1 ]; then
+        info "Frontend changed — rebuilding dashboard..."
+        cd "$INSTALL_DIR/frontend" || { err "frontend directory not found"; exit 1; }
+
+        # Only run npm install if package.json / package-lock.json changed
+        if echo "$CHANGED_FILES" | grep -q "^frontend/package"; then
+            info "Package manifest changed — running npm install..."
+            npm install 2>&1 || warn "npm install had warnings"
+        fi
+
+        info "Building React app (this takes ~30s on SBCs)..."
+        if npm run build 2>&1; then
+            # Deploy built files to backend/static
+            mkdir -p "$INSTALL_DIR/backend/static"
+            rm -rf "$INSTALL_DIR/backend/static/"*
+            cp -r dist/* "$INSTALL_DIR/backend/static/"
+            ok "Frontend rebuilt and deployed to backend/static"
+        else
+            err "Frontend build failed — keeping previous build"
+            warn "Run manually: cd $INSTALL_DIR/frontend && npm run build"
+        fi
+
+        cd "$INSTALL_DIR" || exit 1
+    else
+        skip "Frontend"
+    fi
+
+    # ── Backend ──────────────────────────────────────────────────────────────
+    if [ "$BE_CHANGED" -eq 1 ]; then
+        ok "Backend source updated"
+    else
+        skip "Backend"
+    fi
+
+    # ── Restart service ──────────────────────────────────────────────────────
+    echo ""
+    sep
+    info "Restarting service..."
+    if systemctl restart "$SERVICE_NAME" 2>/dev/null; then
+        sleep 2
+        if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+            ok "Service restarted and running"
+        else
+            warn "Service restarted but may not be active — check: journalctl -u $SERVICE_NAME -n 30"
+        fi
+    else
+        warn "systemctl failed — trying service command..."
+        service "$SERVICE_NAME" restart 2>/dev/null || warn "Could not restart service"
+    fi
+
+    echo ""
+    ok "Update complete!  $REMOTE_SHORT"
+    echo ""
+}
+
+# ── force_rebuild: always rebuild frontend regardless of git state ────────────
+force_rebuild() {
+    echo ""
+    info "Force-rebuilding frontend..."
+    cd "$INSTALL_DIR/frontend" || { err "frontend directory not found"; exit 1; }
+    npm install 2>&1 || warn "npm install had warnings"
+    if npm run build 2>&1; then
+        mkdir -p "$INSTALL_DIR/backend/static"
+        rm -rf "$INSTALL_DIR/backend/static/"*
+        cp -r dist/* "$INSTALL_DIR/backend/static/"
+        ok "Frontend rebuilt and deployed"
+    else
+        err "Build failed"
+        exit 1
+    fi
+    cd "$INSTALL_DIR"
+    info "Restarting service..."
+    systemctl restart "$SERVICE_NAME" 2>/dev/null || true
+    ok "Done"
+    echo ""
+}
+
+# ── Command dispatch ──────────────────────────────────────────────────────────
+case "${1:-}" in
+  -up|update)
+    smart_update
+    ;;
+  -rebuild|rebuild)
+    force_rebuild
+    ;;
+  -r|restart)
+    systemctl restart "$SERVICE_NAME"
+    ok "Service restarted."
+    ;;
+  -s|status)
+    systemctl status "$SERVICE_NAME"
+    ;;
+  -l|logs)
+    journalctl -u "$SERVICE_NAME" -f
+    ;;
+  -start|start)
+    systemctl start "$SERVICE_NAME"
+    ok "Service started."
+    ;;
+  -stop|stop)
+    systemctl stop "$SERVICE_NAME"
+    ok "Service stopped."
+    ;;
+  *)
+    echo ""
+    echo "  AI SBC Security CLI"
+    echo ""
+    echo "  Usage: sudo aisbc <command>"
+    echo ""
+    echo "    -up        Pull latest from GitHub, rebuild what changed, restart"
+    echo "    -rebuild   Force-rebuild frontend regardless of git state"
+    echo "    -r         Restart the service"
+    echo "    -s         Show service status"
+    echo "    -l         Tail live logs"
+    echo "    -start     Start the service"
+    echo "    -stop      Stop the service"
+    echo ""
+    ;;
+esac

@@ -590,127 +590,13 @@ EOF
         warn "Service may not have started — check: journalctl -u $SERVICE_NAME -n 30"
     fi
 
-    # Install aisbc CLI tool
-    $SUDO tee /usr/local/bin/aisbc > /dev/null << 'AISBC_EOF'
-#!/usr/bin/env bash
-# AI SBC Security — CLI helper
-SERVICE_NAME="ai-sbc-security"
-INSTALL_DIR="/opt/ai-sbc-security"
-
-_green='\033[1;32m'; _cyan='\033[1;36m'; _dim='\033[2m'; _reset='\033[0m'
-ok()   { printf "  ${_green}✓${_reset}  %s\n" "$1"; }
-info() { printf "  ${_cyan}·${_reset}  %s\n" "$1"; }
-skip() { printf "  ${_dim}↷  %s — skipped (no changes)${_reset}\n" "$1"; }
-
-smart_update() {
-    if [ ! -d "$INSTALL_DIR/.git" ]; then
-        echo "Install directory not found. Run the full installer first."
-        exit 1
-    fi
-
-    cd "$INSTALL_DIR"
-
-    # Snapshot state before pull
-    # Use git ls-tree WITH blob hashes (not --name-only) so file modifications are detected
-    OLD_REQ=$(git show HEAD:requirements.txt 2>/dev/null | md5sum)
-    OLD_FE=$(git ls-tree -r HEAD frontend/src 2>/dev/null | md5sum)
-    OLD_BE=$(git ls-tree -r HEAD backend/ 2>/dev/null | md5sum)
-
-    info "Pulling latest changes from GitHub..."
-    git pull origin main --quiet
-    echo ""
-
-    NEW_REQ=$(git show HEAD:requirements.txt 2>/dev/null | md5sum)
-    NEW_FE=$(git ls-tree -r HEAD frontend/src 2>/dev/null | md5sum)
-    NEW_BE=$(git ls-tree -r HEAD backend/ 2>/dev/null | md5sum)
-
-    CHANGED=0
-
-    # Python packages — only if requirements.txt changed
-    if [ "$OLD_REQ" != "$NEW_REQ" ]; then
-        info "requirements.txt changed — updating packages..."
-        "$INSTALL_DIR/venv/bin/pip" install -r requirements.txt -q
-        ok "Python packages updated"
-        CHANGED=1
+    # Install aisbc CLI tool — copy the canonical script from the repo
+    # (the repo's aisbc file is the single source of truth; no embedded copy)
+    if [ -f "$INSTALL_DIR/aisbc" ]; then
+        $SUDO cp "$INSTALL_DIR/aisbc" /usr/local/bin/aisbc
     else
-        skip "Python packages"
+        warn "aisbc script not found in repo — skipping CLI install"
     fi
-
-    # Frontend — only if frontend/src changed
-    if [ "$OLD_FE" != "$NEW_FE" ]; then
-        info "Frontend source changed — rebuilding..."
-        cd "$INSTALL_DIR/frontend"
-        npm install --silent 2>/dev/null
-        npm run build --silent 2>/dev/null
-        # Copy built files to backend/static so FastAPI serves the new version
-        mkdir -p "$INSTALL_DIR/backend/static"
-        cp -r "$INSTALL_DIR/frontend/dist/"* "$INSTALL_DIR/backend/static/"
-        cd "$INSTALL_DIR"
-        ok "Frontend rebuilt and deployed"
-        CHANGED=1
-    else
-        skip "Frontend"
-    fi
-
-    # Backend changed — just needs a restart
-    if [ "$OLD_BE" != "$NEW_BE" ]; then
-        ok "Backend updated"
-        CHANGED=1
-    else
-        skip "Backend"
-    fi
-
-    echo ""
-    sudo systemctl restart "$SERVICE_NAME"
-    ok "Service restarted"
-
-    if [ "$CHANGED" -eq 0 ]; then
-        echo ""
-        info "Already up to date — no changes detected."
-    else
-        echo ""
-        ok "Update complete!"
-    fi
-}
-
-case "${1:-}" in
-  -up|update)
-    smart_update
-    ;;
-  -r|restart)
-    sudo systemctl restart "$SERVICE_NAME"
-    ok "Service restarted."
-    ;;
-  -s|status)
-    systemctl status "$SERVICE_NAME"
-    ;;
-  -l|logs)
-    journalctl -u "$SERVICE_NAME" -f
-    ;;
-  -start|start)
-    sudo systemctl start "$SERVICE_NAME"
-    ok "Service started."
-    ;;
-  -stop|stop)
-    sudo systemctl stop "$SERVICE_NAME"
-    ok "Service stopped."
-    ;;
-  *)
-    echo ""
-    echo "  AI SBC Security CLI"
-    echo ""
-    echo "  Usage: aisbc <command>"
-    echo ""
-    echo "    -up       Smart update from GitHub (skips unchanged components)"
-    echo "    -r        Restart the service"
-    echo "    -s        Show service status"
-    echo "    -l        Tail live logs"
-    echo "    -start    Start the service"
-    echo "    -stop     Stop the service"
-    echo ""
-    ;;
-esac
-AISBC_EOF
     $SUDO chmod +x /usr/local/bin/aisbc
     ok "aisbc CLI installed — run 'aisbc -up' to update anytime"
 }
