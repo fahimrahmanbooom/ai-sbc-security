@@ -721,6 +721,26 @@ async def system_update(current_user: User = Depends(get_current_user)):
                 await prog("Git fetch failed", fetch.stderr[:300], error=True)
                 return
 
+            # Fix directory permissions so git can unlink/overwrite files.
+            # The service's CapabilityBoundingSet drops CAP_DAC_OVERRIDE so we
+            # must ensure every directory under the repo is writable by its owner.
+            await prog("Fixing permissions…")
+            subprocess.run(
+                ["find", str(repo), "-not", "-path", "*/.git/*",
+                 "-type", "d", "-exec", "chmod", "u+rwx", "{}", "+"],
+                capture_output=True, cwd=repo,
+            )
+            subprocess.run(
+                ["find", str(repo), "-not", "-path", "*/.git/*",
+                 "-type", "f", "-exec", "chmod", "u+rw", "{}", "+"],
+                capture_output=True, cwd=repo,
+            )
+            # Also ensure .git itself is writable (needed to update .git/index)
+            subprocess.run(
+                ["chmod", "-R", "u+rw", os.path.join(str(repo), ".git")],
+                capture_output=True,
+            )
+
             # Hard-reset to remote — handles diverged branches cleanly
             await prog("Applying update…")
             reset = subprocess.run(
