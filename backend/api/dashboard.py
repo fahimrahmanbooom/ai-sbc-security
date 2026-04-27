@@ -712,13 +712,23 @@ async def system_update(current_user: User = Depends(get_current_user)):
             # Record old HEAD before pull
             old_sha = _git("rev-parse", "HEAD", cwd=repo)
 
-            await prog("Pulling latest code…")
-            pull = subprocess.run(
-                ["git", "pull", "origin", "main"],
+            await prog("Fetching latest code…")
+            fetch = subprocess.run(
+                ["git", "fetch", "origin", "main"],
                 capture_output=True, text=True, cwd=repo, timeout=60,
             )
-            if pull.returncode != 0:
-                await prog("Git pull failed", pull.stderr[:300], error=True)
+            if fetch.returncode != 0:
+                await prog("Git fetch failed", fetch.stderr[:300], error=True)
+                return
+
+            # Hard-reset to remote — handles diverged branches cleanly
+            await prog("Applying update…")
+            reset = subprocess.run(
+                ["git", "reset", "--hard", "origin/main"],
+                capture_output=True, text=True, cwd=repo, timeout=30,
+            )
+            if reset.returncode != 0:
+                await prog("Git reset failed", reset.stderr[:300], error=True)
                 return
 
             new_sha = _git("rev-parse", "HEAD", cwd=repo)

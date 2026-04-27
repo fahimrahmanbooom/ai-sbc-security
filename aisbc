@@ -72,11 +72,11 @@ smart_update() {
     sep
     echo ""
 
-    # ── Pull ────────────────────────────────────────────────────────────────
-    info "Pulling changes..."
-    if ! git pull origin main; then
-        err "git pull failed — manual intervention may be needed"
-        echo "  Try: cd $INSTALL_DIR && git pull origin main"
+    # ── Fetch + hard-reset (handles diverged branches cleanly) ───────────────
+    info "Applying update..."
+    git fetch origin main 2>&1
+    if ! git reset --hard origin/main; then
+        err "git reset failed — try: cd $INSTALL_DIR && git reset --hard origin/main"
         exit 1
     fi
     ok "Code updated  $LOCAL_SHORT → $REMOTE_SHORT"

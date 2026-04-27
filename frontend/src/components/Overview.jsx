@@ -404,7 +404,7 @@ function UpdateWidget({ lastMessage }) {
     >
       {/* ── Header row ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-        {/* Left: icon + version info + status badge */}
+        {/* Left: icon + title + version */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span style={{ fontSize: 18, flexShrink: 0 }}>🔄</span>
           <div>
@@ -420,7 +420,12 @@ function UpdateWidget({ lastMessage }) {
               <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>Checking GitHub…</div>
             )}
           </div>
+        </div>
 
+        {/* Right: status pill + action buttons */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+
+          {/* Status pill — rightmost label before action buttons */}
           {versionInfo && (
             <span style={{
               padding: '3px 10px', borderRadius: 99, fontSize: 11, fontWeight: 700,
@@ -431,10 +436,7 @@ function UpdateWidget({ lastMessage }) {
               {updateAvailable ? '↑ Update available' : '✓ Up to date'}
             </span>
           )}
-        </div>
 
-        {/* Right: action buttons */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <button
             onClick={checkForUpdates}
             disabled={checking || updating}
@@ -446,7 +448,7 @@ function UpdateWidget({ lastMessage }) {
                 <span style={{ width: 11, height: 11, border: '2px solid var(--border-md)', borderTopColor: 'var(--accent)', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
                 Checking…
               </span>
-            ) : '↻ Check for updates'}
+            ) : '↻ Check'}
           </button>
 
           {updateAvailable && !updating && (
@@ -472,7 +474,7 @@ function UpdateWidget({ lastMessage }) {
               className="btn btn-ghost"
               style={{ fontSize: 11, padding: '4px 10px', color: 'var(--text-3)' }}
             >
-              {showLog ? 'Hide log' : 'Show log'}
+              Hide log
             </button>
           )}
         </div>
