@@ -265,10 +265,11 @@ function FindingRow({ finding, expanded, onClick, onAutoFixed }) {
           {finding.title}
         </span>
 
-        {/* Severity badge — fixed-width column so every row aligns perfectly */}
-        <span style={{ flexShrink: 0, width: 82, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {/* Severity badge — fixed-width column, left-aligned so every badge
+            starts at the same X regardless of label length */}
+        <span style={{ flexShrink: 0, width: 82, display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
           {!finding.passed && (
-            <span className={`badge badge-${finding.severity}`} style={{ minWidth: 56, textAlign: 'center' }}>
+            <span className={`badge badge-${finding.severity}`}>
               {finding.severity}
             </span>
           )}
