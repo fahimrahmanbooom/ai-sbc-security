@@ -167,7 +167,11 @@ class ThreatPredictor:
             series = self._aggregate_to_hourly(hours=self.min_history)
             has_data = len([v for v in series if v > 0]) >= 5
 
-        if not has_data:
+        # Consider "has data" if we have enough recorded points, even if scores
+        # are all zero (healthy system). This allows a meaningful flat forecast
+        # rather than the permanent "warming up" state on quiet systems.
+        has_enough_points = len(self.history) >= 5
+        if not has_data and not has_enough_points:
             return self._empty_forecast()
 
         # Fit models

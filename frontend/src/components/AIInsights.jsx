@@ -7,18 +7,27 @@ export default function AIInsights() {
   const [forecast, setForecast] = useState(null)
   const [insights, setInsights] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [tab, setTab] = useState('forecast')
+  const [lastRefresh, setLastRefresh] = useState(null)
 
-  useEffect(() => {
+  const load = (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true)
+    else setLoading(true)
     Promise.all([
       dashboardAPI.forecast(),
       dashboardAPI.insights(),
     ]).then(([f, i]) => {
       setForecast(f.data)
       setInsights(i.data)
+      setLastRefresh(new Date())
+    }).catch(() => {}).finally(() => {
       setLoading(false)
-    }).catch(() => setLoading(false))
-  }, [])
+      setRefreshing(false)
+    })
+  }
+
+  useEffect(() => { load() }, [])
 
   if (loading) return (
     <div style={{ padding: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', height: 260 }}>
@@ -41,11 +50,28 @@ export default function AIInsights() {
   return (
     <motion.div style={{ padding: 24 }} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       {/* Header */}
-      <div style={{ marginBottom: 20 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>AI Insights</h2>
-        <p style={{ fontSize: 13, color: 'var(--text-3)', marginTop: 3 }}>
-          Machine learning analysis &amp; predictive threat forecasting
-        </p>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
+        <div>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>AI Insights</h2>
+          <p style={{ fontSize: 13, color: 'var(--text-3)', marginTop: 3 }}>
+            Machine learning analysis &amp; predictive threat forecasting
+            {lastRefresh && (
+              <span style={{ marginLeft: 8, fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+                · updated {lastRefresh.toLocaleTimeString()}
+              </span>
+            )}
+          </p>
+        </div>
+        <button onClick={() => load(true)} disabled={refreshing}
+          className="btn btn-ghost"
+          style={{ fontSize: 12, padding: '5px 12px', flexShrink: 0 }}>
+          {refreshing ? (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 10, height: 10, border: '2px solid var(--border-md)', borderTopColor: 'var(--accent)', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
+              Refreshing…
+            </span>
+          ) : '↻ Refresh'}
+        </button>
       </div>
 
       {/* Tabs */}
