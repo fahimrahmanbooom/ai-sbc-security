@@ -265,10 +265,10 @@ function FindingRow({ finding, expanded, onClick, onAutoFixed }) {
           {finding.title}
         </span>
 
-        {/* Severity badge — fixed-width slot keeps every row aligned */}
-        <span style={{ flexShrink: 0, width: 72, display: 'flex', alignItems: 'center' }}>
+        {/* Severity badge — fixed-width column so every row aligns perfectly */}
+        <span style={{ flexShrink: 0, width: 82, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           {!finding.passed && (
-            <span className={`badge badge-${finding.severity}`}>
+            <span className={`badge badge-${finding.severity}`} style={{ minWidth: 56, textAlign: 'center' }}>
               {finding.severity}
             </span>
           )}
