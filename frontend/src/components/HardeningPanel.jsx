@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { dashboardAPI } from '../utils/api'
 import toast from 'react-hot-toast'
@@ -46,6 +46,21 @@ export default function HardeningPanel() {
     try { await dashboardAPI.post('/hardening/audit'); await load() } catch {}
     setAuditing(false)
   }
+
+  // Called by FindingRow after a successful auto-fix.
+  // Optimistically mark the finding as passed so it disappears immediately
+  // (the backend report only updates after the next full audit).
+  const handleAutoFixed = useCallback((fixedCheckId) => {
+    setReport(prev => {
+      if (!prev?.findings) return prev
+      const updatedFindings = prev.findings.map(f =>
+        f.check_id === fixedCheckId ? { ...f, passed: true } : f
+      )
+      return { ...prev, findings: updatedFindings }
+    })
+    // Trigger a fresh audit in the background so the server state catches up
+    setTimeout(load, 3000)
+  }, [])
 
   const allFindings = report?.findings || []
   const categories = ['all', ...new Set(allFindings.map(f => f.category))]
@@ -200,7 +215,7 @@ export default function HardeningPanel() {
               <FindingRow key={finding.check_id || i} finding={finding}
                 expanded={expandedId === finding.check_id}
                 onClick={() => setExpandedId(expandedId === finding.check_id ? null : finding.check_id)}
-                onAutoFixed={load} />
+                onAutoFixed={handleAutoFixed} />
             ))}
           </div>
         )}
@@ -220,7 +235,7 @@ function FindingRow({ finding, expanded, onClick, onAutoFixed }) {
     try {
       await dashboardAPI.post('/hardening/autofix', { check_id: finding.check_id })
       toast.success(`Fix applied: ${finding.title}`)
-      if (onAutoFixed) onAutoFixed()
+      if (onAutoFixed) onAutoFixed(finding.check_id)
     } catch (err) {
       const msg = err?.response?.data?.detail || 'Auto-fix failed'
       toast.error(msg)
@@ -250,12 +265,14 @@ function FindingRow({ finding, expanded, onClick, onAutoFixed }) {
           {finding.title}
         </span>
 
-        {/* Severity badge */}
-        {!finding.passed && (
-          <span className={`badge badge-${finding.severity}`} style={{ flexShrink: 0 }}>
-            {finding.severity}
-          </span>
-        )}
+        {/* Severity badge — fixed-width slot keeps every row aligned */}
+        <span style={{ flexShrink: 0, width: 72, display: 'flex', alignItems: 'center' }}>
+          {!finding.passed && (
+            <span className={`badge badge-${finding.severity}`}>
+              {finding.severity}
+            </span>
+          )}
+        </span>
 
         {/* Category tag */}
         <span style={{

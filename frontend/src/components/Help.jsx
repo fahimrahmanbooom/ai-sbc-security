@@ -131,7 +131,7 @@ export default function Help() {
   const [openIdx, setOpenIdx] = useState(null)
 
   return (
-    <div style={{ padding: 24, maxWidth: 820 }}>
+    <div style={{ padding: 24 }}>
 
       {/* Header */}
       <div style={{ marginBottom: 24 }}>

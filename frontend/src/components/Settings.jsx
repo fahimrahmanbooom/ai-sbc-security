@@ -172,12 +172,13 @@ export default function Settings() {
 
             {totpPhase === 'idle' && (
               user?.totp_enabled ? (
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <input value={totpToken}
                     onChange={e => setTotpToken(e.target.value.replace(/\D/g, '').slice(0, 6))}
                     placeholder="Enter code to disable" maxLength={6}
-                    className="input font-mono" style={{ maxWidth: 200, letterSpacing: '0.2em', textAlign: 'center' }} />
-                  <button onClick={disableTOTP} disabled={loading} className="btn btn-danger">
+                    className="input font-mono"
+                    style={{ width: 190, flex: '0 0 190px', letterSpacing: '0.2em', textAlign: 'center' }} />
+                  <button onClick={disableTOTP} disabled={loading} className="btn btn-danger" style={{ flexShrink: 0 }}>
                     {loading ? 'Disabling…' : 'Disable 2FA'}
                   </button>
                 </div>

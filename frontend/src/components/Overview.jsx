@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, RadialBarChart, RadialBar } from 'recharts'
 import { dashboardAPI, formatBytesPerSec } from '../utils/api'
 
@@ -89,6 +89,9 @@ export default function Overview({ liveMetrics, lastMessage }) {
           </motion.div>
         ))}
       </div>
+
+      {/* ── Software Update Widget ── */}
+      <UpdateWidget lastMessage={lastMessage} />
 
       {/* ── AI Status card ── */}
       <motion.div {...stagger(6)} className="card" style={{ padding: '16px 20px', marginBottom: 12 }}>
@@ -337,5 +340,200 @@ function Legend({ color, label }) {
       <div style={{ width: 8, height: 2, borderRadius: 99, background: color }} />
       <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{label}</span>
     </div>
+  )
+}
+
+// ── Software Update Widget ─────────────────────────────────────────────────────
+function UpdateWidget({ lastMessage }) {
+  const [versionInfo, setVersionInfo]   = useState(null)
+  const [checking, setChecking]         = useState(false)
+  const [updating, setUpdating]         = useState(false)
+  const [updateLog, setUpdateLog]       = useState([])
+  const [showLog, setShowLog]           = useState(false)
+  const logRef                          = React.useRef(null)
+
+  const checkForUpdates = async () => {
+    setChecking(true)
+    try {
+      const { data } = await dashboardAPI.systemVersion()
+      setVersionInfo(data)
+    } catch {}
+    setChecking(false)
+  }
+
+  React.useEffect(() => { checkForUpdates() }, [])
+
+  // Receive live progress messages via the shared WebSocket
+  React.useEffect(() => {
+    if (!lastMessage || lastMessage.type !== 'update_progress') return
+    setUpdateLog(prev => [...prev, lastMessage])
+    setShowLog(true)
+    if (lastMessage.done || lastMessage.error) {
+      setUpdating(false)
+      // Re-check version after a successful update
+      if (lastMessage.done) setTimeout(checkForUpdates, 2000)
+    }
+  }, [lastMessage])
+
+  // Auto-scroll log to bottom
+  React.useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight
+  }, [updateLog])
+
+  const handleUpdate = async () => {
+    setUpdateLog([])
+    setUpdating(true)
+    setShowLog(true)
+    try {
+      await dashboardAPI.systemUpdate()
+    } catch {
+      setUpdating(false)
+      setUpdateLog([{ step: 'Failed to start update', error: true }])
+    }
+  }
+
+  const updateAvailable = versionInfo?.update_available
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25 }}
+      className="card"
+      style={{ padding: '14px 20px', marginBottom: 12 }}
+    >
+      {/* ── Header row ── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+        {/* Left: icon + version info + status badge */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontSize: 18, flexShrink: 0 }}>🔄</span>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>Software Update</div>
+            {versionInfo ? (
+              <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1, fontFamily: 'var(--font-mono)' }}>
+                {updateAvailable
+                  ? <>current: {versionInfo.current_version} &rarr; latest: {versionInfo.latest_version}</>
+                  : <>version: {versionInfo.current_version}</>
+                }
+              </div>
+            ) : (
+              <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>Checking GitHub…</div>
+            )}
+          </div>
+
+          {versionInfo && (
+            <span style={{
+              padding: '3px 10px', borderRadius: 99, fontSize: 11, fontWeight: 700,
+              background: updateAvailable ? 'rgba(88,166,255,0.12)' : 'rgba(63,185,80,0.12)',
+              color:      updateAvailable ? '#58a6ff'              : 'var(--success)',
+              border:     `1px solid ${updateAvailable ? 'rgba(88,166,255,0.3)' : 'rgba(63,185,80,0.3)'}`,
+            }}>
+              {updateAvailable ? '↑ Update available' : '✓ Up to date'}
+            </span>
+          )}
+        </div>
+
+        {/* Right: action buttons */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button
+            onClick={checkForUpdates}
+            disabled={checking || updating}
+            className="btn btn-ghost"
+            style={{ fontSize: 12, padding: '5px 12px' }}
+          >
+            {checking ? (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ width: 11, height: 11, border: '2px solid var(--border-md)', borderTopColor: 'var(--accent)', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
+                Checking…
+              </span>
+            ) : '↻ Check for updates'}
+          </button>
+
+          {updateAvailable && !updating && (
+            <button
+              onClick={handleUpdate}
+              className="btn btn-primary"
+              style={{ fontSize: 12, padding: '5px 12px' }}
+            >
+              ↑ Update now
+            </button>
+          )}
+
+          {updating && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: 'var(--warning)', padding: '5px 12px' }}>
+              <span style={{ width: 11, height: 11, border: '2px solid rgba(210,153,34,0.3)', borderTopColor: '#d29922', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
+              Updating…
+            </span>
+          )}
+
+          {showLog && !updating && (
+            <button
+              onClick={() => setShowLog(s => !s)}
+              className="btn btn-ghost"
+              style={{ fontSize: 11, padding: '4px 10px', color: 'var(--text-3)' }}
+            >
+              {showLog ? 'Hide log' : 'Show log'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Progress / log panel ── */}
+      <AnimatePresence>
+        {showLog && updateLog.length > 0 && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            style={{ overflow: 'hidden' }}
+          >
+            <div
+              ref={logRef}
+              style={{
+                marginTop: 12,
+                background: 'var(--bg)', border: '1px solid var(--border)',
+                borderRadius: 8, padding: '10px 14px',
+                maxHeight: 200, overflowY: 'auto',
+                fontFamily: 'var(--font-mono)', fontSize: 12,
+                display: 'flex', flexDirection: 'column', gap: 5,
+              }}
+            >
+              {updateLog.map((entry, i) => (
+                <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <span style={{ flexShrink: 0, color: entry.error ? 'var(--danger)' : entry.done ? 'var(--success)' : 'var(--accent)' }}>
+                    {entry.error ? '✗' : entry.done ? '✓' : '›'}
+                  </span>
+                  <div>
+                    <span style={{ color: entry.error ? 'var(--danger)' : entry.done ? 'var(--success)' : 'var(--text-1)', fontWeight: 600 }}>
+                      {entry.step}
+                    </span>
+                    {entry.detail && (
+                      <span style={{ color: 'var(--text-3)', marginLeft: 8 }}>{entry.detail}</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {updating && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-3)' }}>
+                  <span style={{ width: 10, height: 10, border: '2px solid var(--border-md)', borderTopColor: 'var(--accent)', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite', flexShrink: 0 }} />
+                  Running…
+                </div>
+              )}
+            </div>
+
+            {!updating && updateLog.some(e => e.done) && (
+              <button
+                onClick={() => window.location.reload()}
+                className="btn btn-primary"
+                style={{ width: '100%', marginTop: 10, fontSize: 12 }}
+              >
+                Reload dashboard
+              </button>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   )
 }
