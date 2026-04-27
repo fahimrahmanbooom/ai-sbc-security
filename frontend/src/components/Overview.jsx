@@ -182,7 +182,7 @@ export default function Overview({ liveMetrics, lastMessage }) {
               </defs>
               <CartesianGrid vertical={false} />
               <XAxis dataKey="t" tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={60} />
-              <YAxis domain={[0,100]} tickLine={false} axisLine={false} tickFormatter={v=>`${v}%`} />
+              <YAxis domain={[0,100]} orientation="right" tickLine={false} axisLine={false} tickFormatter={v=>`${v}%`} />
               <Tooltip formatter={(v,n)=>[`${v?.toFixed(1)}%`, n]} />
               <Area type="monotone" dataKey="cpu" stroke="var(--accent)" strokeWidth={1.5} fill="url(#gCpu)" name="CPU" dot={false} />
               <Area type="monotone" dataKey="ram" stroke="var(--purple)" strokeWidth={1.5} fill="url(#gRam)" name="RAM" dot={false} />
@@ -208,7 +208,7 @@ export default function Overview({ liveMetrics, lastMessage }) {
               </defs>
               <CartesianGrid vertical={false} />
               <XAxis dataKey="t" tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={60} />
-              <YAxis domain={[0, 100]} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
+              <YAxis domain={[0, 100]} orientation="right" tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
               <Tooltip formatter={(v) => [`${v?.toFixed(1)}%`, 'Threat']} />
               <Area type="monotone" dataKey="threat" stroke="var(--danger)" strokeWidth={1.5} fill="url(#gThreat)" name="Threat" dot={false} />
             </AreaChart>
@@ -241,7 +241,7 @@ export default function Overview({ liveMetrics, lastMessage }) {
               </defs>
               <CartesianGrid vertical={false} />
               <XAxis dataKey="t" tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={60} />
-              <YAxis tickLine={false} axisLine={false} tickFormatter={v=>`${v.toFixed(0)}K`} width={62} />
+              <YAxis orientation="right" tickLine={false} axisLine={false} tickFormatter={v=>`${v.toFixed(0)}K`} width={62} />
               <Tooltip formatter={(v,n)=>[`${v?.toFixed(1)} KB/s`, n]} />
               <Area type="monotone" dataKey="netIn"  stroke="var(--success)" strokeWidth={1.5} fill="url(#gIn)"  name="↓ In"  dot={false} />
               <Area type="monotone" dataKey="netOut" stroke="var(--warning)" strokeWidth={1.5} fill="url(#gOut)" name="↑ Out" dot={false} />
