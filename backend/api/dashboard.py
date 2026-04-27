@@ -178,7 +178,7 @@ async def get_overview(
         "system": {
             **{k: metrics.get(k) for k in [
                 "cpu_percent", "ram_percent", "disk_percent",
-                "cpu_temp", "load_avg_1", "load_avg_5",
+                "cpu_temp", "load_avg_1", "load_avg_5", "load_avg_15",
                 "ram_used_mb", "ram_total_mb",
                 "disk_used_gb", "disk_total_gb",
                 "processes_count", "open_connections",

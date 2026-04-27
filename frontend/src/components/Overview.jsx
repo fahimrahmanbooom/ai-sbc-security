@@ -169,7 +169,7 @@ export default function Overview({ liveMetrics, lastMessage }) {
             </div>
           </div>
           <ResponsiveContainer width="100%" height={160}>
-            <AreaChart data={history} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
+            <AreaChart data={history} margin={{ top: 0, right: 0, bottom: 0, left: 8 }}>
               <defs>
                 <linearGradient id="gCpu" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%"   stopColor="var(--accent)"  stopOpacity={0.25}/>
@@ -199,7 +199,7 @@ export default function Overview({ liveMetrics, lastMessage }) {
             <Legend color="var(--danger)" label="Threat level %" />
           </div>
           <ResponsiveContainer width="100%" height={110}>
-            <AreaChart data={history} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
+            <AreaChart data={history} margin={{ top: 0, right: 0, bottom: 0, left: 8 }}>
               <defs>
                 <linearGradient id="gThreat" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%"   stopColor="var(--danger)" stopOpacity={0.35}/>
@@ -228,7 +228,7 @@ export default function Overview({ liveMetrics, lastMessage }) {
             </div>
           </div>
           <ResponsiveContainer width="100%" height={140}>
-            <AreaChart data={history} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
+            <AreaChart data={history} margin={{ top: 0, right: 0, bottom: 0, left: 20 }}>
               <defs>
                 <linearGradient id="gIn"  x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%"   stopColor="var(--success)" stopOpacity={0.2}/>
@@ -241,7 +241,7 @@ export default function Overview({ liveMetrics, lastMessage }) {
               </defs>
               <CartesianGrid vertical={false} />
               <XAxis dataKey="t" tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={60} />
-              <YAxis tickLine={false} axisLine={false} tickFormatter={v=>`${v.toFixed(0)}K`} />
+              <YAxis tickLine={false} axisLine={false} tickFormatter={v=>`${v.toFixed(0)}K`} width={62} />
               <Tooltip formatter={(v,n)=>[`${v?.toFixed(1)} KB/s`, n]} />
               <Area type="monotone" dataKey="netIn"  stroke="var(--success)" strokeWidth={1.5} fill="url(#gIn)"  name="↓ In"  dot={false} />
               <Area type="monotone" dataKey="netOut" stroke="var(--warning)" strokeWidth={1.5} fill="url(#gOut)" name="↑ Out" dot={false} />
@@ -318,9 +318,10 @@ function ResourceRow({ label, pct, value, sub, color }) {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
         <span style={{ fontSize: 12, color: 'var(--text-2)', fontWeight: 500 }}>{label}</span>
-        <div style={{ textAlign: 'right' }}>
+        <div style={{ textAlign: 'right', minWidth: 58 }}>
           <span style={{ fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-mono)',
-            color: isHigh ? 'var(--danger)' : color }}>{value}</span>
+            color: isHigh ? 'var(--danger)' : color,
+            fontVariantNumeric: 'tabular-nums' }}>{value}</span>
           {sub && <div style={{ fontSize: 10, color: 'var(--text-3)' }}>{sub}</div>}
         </div>
       </div>
