@@ -389,8 +389,11 @@ function UpdateWidget({ lastMessage }) {
       await dashboardAPI.systemUpdate()
     } catch (err) {
       const status = err?.response?.status
-      if (status === 409) {
-        // Another update is already running — just watch the WebSocket for its progress
+      const isTimeout = err?.code === 'ECONNABORTED' || err?.message?.includes('timeout')
+      if (status === 409 || isTimeout) {
+        // 409 = update already running; timeout = server is busy starting the
+        // update and hasn't flushed the response yet. Either way, the update
+        // is running — just watch the WebSocket for progress.
         return
       }
       setUpdating(false)

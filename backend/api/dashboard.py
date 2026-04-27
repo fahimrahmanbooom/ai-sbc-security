@@ -692,6 +692,10 @@ async def system_update(current_user: User = Depends(get_current_user)):
         raise HTTPException(status_code=409, detail="An update is already in progress")
 
     async def _run():
+        # Yield to the event loop so FastAPI can flush the HTTP 200 response
+        # to the client before any blocking subprocess calls begin.
+        await asyncio.sleep(0.2)
+
         repo = _install_dir()
         frontend = os.path.join(repo, "frontend")
         static   = os.path.join(repo, "backend", "static")

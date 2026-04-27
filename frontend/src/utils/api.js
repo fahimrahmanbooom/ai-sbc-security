@@ -96,9 +96,10 @@ export const dashboardAPI = {
   federatedStatus: () => api.get('/api/federated/status'),
   federatedEnable: (enabled) => api.post('/api/federated/enable', { enabled }),
 
-  // System update
+  // System update — longer timeout: response can take a few seconds while
+  // the server runs pre-flight chmod steps before releasing the event loop.
   systemVersion: () => api.get('/api/system/version'),
-  systemUpdate:  () => api.post('/api/system/update'),
+  systemUpdate:  () => api.post('/api/system/update', null, { timeout: 30000 }),
 }
 
 // ── WebSocket ──
