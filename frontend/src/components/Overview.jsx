@@ -388,6 +388,11 @@ function UpdateWidget({ lastMessage }) {
     try {
       await dashboardAPI.systemUpdate()
     } catch (err) {
+      const status = err?.response?.status
+      if (status === 409) {
+        // Another update is already running — just watch the WebSocket for its progress
+        return
+      }
       setUpdating(false)
       const detail = err?.response?.data?.detail || err?.message || 'unknown error'
       setUpdateLog([{ step: `Failed to start update: ${detail}`, error: true }])
@@ -453,13 +458,14 @@ function UpdateWidget({ lastMessage }) {
             ) : '↻ Check'}
           </button>
 
-          {updateAvailable && !updating && (
+          {updateAvailable && (
             <button
               onClick={handleUpdate}
+              disabled={updating}
               className="btn btn-primary"
-              style={{ fontSize: 12, padding: '5px 12px' }}
+              style={{ fontSize: 12, padding: '5px 12px', opacity: updating ? 0.5 : 1 }}
             >
-              ↑ Update now
+              {updating ? 'Updating…' : '↑ Update now'}
             </button>
           )}
 
