@@ -169,7 +169,7 @@ export default function Overview({ liveMetrics, lastMessage }) {
             </div>
           </div>
           <ResponsiveContainer width="100%" height={160}>
-            <AreaChart data={history} margin={{ top: 0, right: 0, bottom: 0, left: 8 }}>
+            <AreaChart data={history} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
               <defs>
                 <linearGradient id="gCpu" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%"   stopColor="var(--accent)"  stopOpacity={0.25}/>
@@ -199,7 +199,7 @@ export default function Overview({ liveMetrics, lastMessage }) {
             <Legend color="var(--danger)" label="Threat level %" />
           </div>
           <ResponsiveContainer width="100%" height={110}>
-            <AreaChart data={history} margin={{ top: 0, right: 0, bottom: 0, left: 8 }}>
+            <AreaChart data={history} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
               <defs>
                 <linearGradient id="gThreat" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%"   stopColor="var(--danger)" stopOpacity={0.35}/>
@@ -228,7 +228,7 @@ export default function Overview({ liveMetrics, lastMessage }) {
             </div>
           </div>
           <ResponsiveContainer width="100%" height={140}>
-            <AreaChart data={history} margin={{ top: 0, right: 0, bottom: 0, left: 20 }}>
+            <AreaChart data={history} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
               <defs>
                 <linearGradient id="gIn"  x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%"   stopColor="var(--success)" stopOpacity={0.2}/>
