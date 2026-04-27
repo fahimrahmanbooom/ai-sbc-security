@@ -387,9 +387,10 @@ function UpdateWidget({ lastMessage }) {
     setShowLog(true)
     try {
       await dashboardAPI.systemUpdate()
-    } catch {
+    } catch (err) {
       setUpdating(false)
-      setUpdateLog([{ step: 'Failed to start update', error: true }])
+      const detail = err?.response?.data?.detail || err?.message || 'unknown error'
+      setUpdateLog([{ step: `Failed to start update: ${detail}`, error: true }])
     }
   }
 
