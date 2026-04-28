@@ -651,13 +651,26 @@ print_summary() {
 }
 
 # ── Uninstall ─────────────────────────────────────────────────────────────────
+# `read -p` writes its prompt to stderr, but the top of this script redirects
+# stderr to /tmp/ai-sbc-install.log — which made the uninstall prompts
+# invisible. Use printf to /dev/tty so the user actually sees them.
+ask_yes_no() {
+    local prompt="$1"
+    printf "$prompt" > /dev/tty
+    read -n 1 -r REPLY < /dev/tty
+    printf "\n" > /dev/tty
+    [[ $REPLY =~ ^[Yy]$ ]]
+}
+
 uninstall() {
     print_banner
-    printf "  ${BRED}⚠  UNINSTALL AI SBC SECURITY${RESET}\n\n"
-    printf "  ${DIM}This will remove the application and all its files.${RESET}\n\n"
+    printf "  ${BRED}⚠  UNINSTALL AI SBC SECURITY${RESET}\n\n" > /dev/tty
+    printf "  ${DIM}This will remove the application and all its files.${RESET}\n\n" > /dev/tty
 
-    read -p "  Are you sure? [y/N] " -n 1 -r </dev/tty; echo ""
-    [[ $REPLY =~ ^[Yy]$ ]] || { echo "  Cancelled."; exit 0; }
+    if ! ask_yes_no "  Are you sure? [y/N] "; then
+        printf "  Cancelled.\n" > /dev/tty
+        exit 0
+    fi
 
     spinner_start "Stopping service..."
     sudo systemctl stop "$SERVICE_NAME" 2>/dev/null || true
@@ -675,10 +688,14 @@ uninstall() {
     ok "aisbc CLI removed"
 
     echo ""
-    read -p "  Remove all monitoring data ($DATA_DIR)? [y/N] " -n 1 -r </dev/tty; echo ""
-    [[ $REPLY =~ ^[Yy]$ ]] && sudo rm -rf "$DATA_DIR" && ok "Data directory removed"
+    if ask_yes_no "  Remove all monitoring data ($DATA_DIR)? [y/N] "; then
+        sudo rm -rf "$DATA_DIR"
+        ok "Data directory removed"
+    else
+        printf "  ${DIM}Keeping data directory: ${DATA_DIR}${RESET}\n" > /dev/tty
+    fi
 
-    printf "\n  ${BGREEN}AI SBC Security has been uninstalled.${RESET}\n\n"
+    printf "\n  ${BGREEN}AI SBC Security has been uninstalled.${RESET}\n\n" > /dev/tty
     exit 0
 }
 
