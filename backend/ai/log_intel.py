@@ -12,6 +12,8 @@ from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
 from enum import Enum
 
+from ..utils.time import utcnow
+
 logger = logging.getLogger("ai_sbc.log_intel")
 
 
@@ -117,7 +119,7 @@ def detect_log_source(filepath: str) -> LogSource:
 
 
 def parse_timestamp(line: str) -> Optional[datetime]:
-    now = datetime.utcnow()
+    now = utcnow()
     for pattern, fmt in TIMESTAMP_PATTERNS:
         m = pattern.search(line)
         if m:
@@ -190,7 +192,7 @@ class CorrelationEngine:
         self.recent_events: deque = deque(maxlen=5000)
 
     def add_event(self, entry: ParsedLogEntry):
-        now = datetime.utcnow()
+        now = utcnow()
         if entry.ip:
             self.events_by_ip[entry.ip].append(entry)
         if entry.user:
@@ -198,12 +200,12 @@ class CorrelationEngine:
         self.recent_events.append(entry)
 
     def _get_window_events(self, events: deque) -> List[ParsedLogEntry]:
-        cutoff = datetime.utcnow() - timedelta(seconds=self.window)
+        cutoff = utcnow() - timedelta(seconds=self.window)
         return [e for e in events if e.timestamp and e.timestamp > cutoff]
 
     def correlate(self) -> List[LogInsight]:
         insights = []
-        now = datetime.utcnow()
+        now = utcnow()
 
         # Pattern 1: IP with multiple high-severity events
         for ip, events in self.events_by_ip.items():

@@ -2,6 +2,7 @@
 AI SBC Security - Authentication Routes
 JWT + TOTP 2FA
 """
+import logging
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -20,12 +21,23 @@ from .models import (
     TOTPSetupResponse, TOTPVerifyRequest, PasswordChangeRequest, RefreshRequest
 )
 from .totp import generate_totp_secret, generate_qr_code_base64, get_totp_uri, verify_totp
+from ..utils.time import utcnow
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 security = HTTPBearer(auto_error=False)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-SECRET_KEY = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
+_log = logging.getLogger("ai_sbc.auth")
+_env_secret = os.environ.get("SECRET_KEY")
+if _env_secret:
+    SECRET_KEY = _env_secret
+else:
+    SECRET_KEY = secrets.token_hex(32)
+    _log.critical(
+        "SECRET_KEY env var is NOT SET. A random key was generated for this run only — "
+        "all issued JWTs and refresh tokens will be invalidated when the service restarts. "
+        "Set SECRET_KEY in /etc/ai-sbc-security/env (or your environment) before going to production."
+    )
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("JWT_EXPIRE_MINUTES", 60))
 REFRESH_TOKEN_EXPIRE_DAYS = 7
@@ -146,7 +158,7 @@ async def login(data: UserLogin, request: Request, db: AsyncSession = Depends(ge
     if not verify_password(data.password, user.hashed_password):
         user.failed_attempts += 1
         if user.failed_attempts >= MAX_FAILED_ATTEMPTS:
-            user.locked_until = datetime.utcnow() + timedelta(minutes=LOCKOUT_MINUTES)
+            user.locked_until = utcnow() + timedelta(minutes=LOCKOUT_MINUTES)
         await db.commit()
         await _audit(db, "login_failed", user.id, request, False, "Bad password")
         raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -165,7 +177,7 @@ async def login(data: UserLogin, request: Request, db: AsyncSession = Depends(ge
     # Success
     user.failed_attempts = 0
     user.locked_until = None
-    user.last_login = datetime.utcnow()
+    user.last_login = utcnow()
     await db.commit()
 
     tokens = create_tokens(user.id, user.username)

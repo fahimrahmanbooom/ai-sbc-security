@@ -196,9 +196,10 @@ async def lifespan(app: FastAPI):
 
     honeypot.on_alert(on_honeypot_alert)
 
-    # Wire federated learning to anomaly model
-    if anomaly.model is not None:
-        fl_client.set_model_reference(anomaly.model)
+    # Wire federated learning to anomaly detector. Pass the detector itself —
+    # the FL client drills into .model.named_steps['iforest'] on each upload,
+    # so retrains that swap detector.model are picked up automatically.
+    fl_client.set_model_reference(anomaly)
 
     # Register callbacks
     sys_mon.add_callback(on_system_metrics)
@@ -275,11 +276,25 @@ app = FastAPI(
     redoc_url="/api/redoc"
 )
 
-# CORS — allow local dev
+# CORS — defaults to same-origin only (the dashboard is served from the same
+# host as the API, so CORS isn't needed in production). Set CORS_ORIGINS to
+# a comma-separated list of origins for cross-origin dev, or "*" for fully
+# open (which forces credentials off, since browsers reject "*" + creds).
+_cors_env = os.environ.get("CORS_ORIGINS", "").strip()
+if _cors_env == "*":
+    _cors_origins = ["*"]
+    _cors_credentials = False
+elif _cors_env:
+    _cors_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
+    _cors_credentials = True
+else:
+    _cors_origins = []
+    _cors_credentials = True
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=_cors_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )

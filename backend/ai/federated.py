@@ -25,7 +25,8 @@ logger = logging.getLogger(__name__)
 
 # Configuration
 FEDERATED_SERVER_URL = os.getenv("FEDERATED_SERVER_URL", "https://fed.ai-sbc-security.org")
-FL_STATE_FILE = "/var/lib/ai-sbc-security/federated_state.json"
+AISBC_DATA_DIR = os.environ.get("AISBC_DATA_DIR", "/var/lib/ai-sbc-security")
+FL_STATE_FILE = os.path.join(AISBC_DATA_DIR, "federated_state.json")
 FL_UPLOAD_INTERVAL = 3600 * 24      # 24 hours between uploads
 FL_DOWNLOAD_INTERVAL = 3600 * 12   # 12 hours between downloads
 
@@ -221,8 +222,32 @@ class FederatedLearningClient:
         logger.info("FL: federated learning %s", "enabled" if enabled else "disabled")
 
     def set_model_reference(self, model):
-        """Set reference to the live anomaly detection model."""
+        """
+        Set reference to the live anomaly detection source.
+        Accepts:
+          • a raw IsolationForest (has .estimators_)
+          • a sklearn Pipeline (e.g. StandardScaler → IsolationForest)
+          • an AnomalyDetector instance (we drill into .model.named_steps['iforest'])
+        Resolved on each upload/download so retrains that swap .model are picked up.
+        """
         self._anomaly_model = model
+
+    def _resolve_iforest(self):
+        """Walk the reference and return the underlying IsolationForest, or None."""
+        ref = self._anomaly_model
+        if ref is None:
+            return None
+        # AnomalyDetector wrapper: drill into .model
+        if not hasattr(ref, "estimators_") and hasattr(ref, "model"):
+            ref = ref.model
+        if ref is None:
+            return None
+        # Pipeline: pull the IsolationForest step out
+        if not hasattr(ref, "estimators_") and hasattr(ref, "named_steps"):
+            ref = ref.named_steps.get("iforest", ref)
+        if hasattr(ref, "estimators_"):
+            return ref
+        return None
 
     async def start(self):
         if not self._state.enabled:
@@ -261,11 +286,12 @@ class FederatedLearningClient:
             await asyncio.sleep(3600)
 
     async def _upload_weights(self):
-        if not self._anomaly_model or not hasattr(self._anomaly_model, "estimators_"):
+        iforest = self._resolve_iforest()
+        if iforest is None:
             logger.info("FL: model not trained yet, skipping upload")
             return
 
-        weights = self._serializer.extract_weights(self._anomaly_model)
+        weights = self._serializer.extract_weights(iforest)
         if not weights:
             return
 
@@ -323,9 +349,10 @@ class FederatedLearningClient:
         if not federated_weights:
             return
 
-        if self._anomaly_model and hasattr(self._anomaly_model, "estimators_"):
+        iforest = self._resolve_iforest()
+        if iforest is not None:
             applied = self._serializer.apply_federated_weights(
-                self._anomaly_model, federated_weights
+                iforest, federated_weights
             )
             if applied:
                 self._state.last_download = time.time()

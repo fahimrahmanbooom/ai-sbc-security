@@ -14,14 +14,27 @@ from dataclasses import dataclass, asdict
 
 import numpy as np
 from sklearn.ensemble import IsolationForest
+
+from ..utils.time import utcnow
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
 import joblib
 
 logger = logging.getLogger("ai_sbc.anomaly")
 
-MODEL_PATH = os.environ.get("MODEL_PATH", "/var/lib/ai-sbc-security/models")
-os.makedirs(MODEL_PATH, exist_ok=True)
+AISBC_DATA_DIR = os.environ.get("AISBC_DATA_DIR", "/var/lib/ai-sbc-security")
+MODEL_PATH = os.environ.get("MODEL_PATH") or os.path.join(AISBC_DATA_DIR, "models")
+try:
+    os.makedirs(MODEL_PATH, exist_ok=True)
+except PermissionError:
+    # Fall back to the system temp dir so import doesn't crash in environments
+    # where /var/lib isn't writable (Docker, dev). Models won't persist across
+    # restarts, but the system stays usable.
+    import tempfile
+    MODEL_PATH = os.path.join(tempfile.gettempdir(), "ai-sbc-models")
+    os.makedirs(MODEL_PATH, exist_ok=True)
+    logger_msg = f"MODEL_PATH not writable, falling back to {MODEL_PATH}"
+    logging.getLogger("ai_sbc.anomaly").warning(logger_msg)
 
 ANOMALY_MODEL_FILE = os.path.join(MODEL_PATH, "anomaly_model.pkl")
 
@@ -101,7 +114,7 @@ class AnomalyDetector:
 
     def extract_features(self, metrics: Dict[str, Any]) -> np.ndarray:
         """Extract and normalize feature vector from raw metrics."""
-        now = datetime.utcnow()
+        now = utcnow()
         cpu_temp = metrics.get("cpu_temp", 50.0) or 50.0
         features = [
             float(metrics.get("cpu_percent", 0)),
@@ -123,12 +136,17 @@ class AnomalyDetector:
 
     async def add_to_baseline(self, metrics: Dict[str, Any]):
         """Add a data point to the training buffer."""
+        should_train = False
         async with self._lock:
             features = self.extract_features(metrics)
             self.training_buffer.append(features.flatten())
             # Auto-retrain when we have enough new data
             if len(self.training_buffer) % 500 == 0 and len(self.training_buffer) >= 100:
-                await self.train()
+                should_train = True
+        # Run train() OUTSIDE the lock — train() acquires self._lock itself,
+        # and asyncio.Lock is non-reentrant, so calling it while held deadlocks.
+        if should_train:
+            await self.train()
 
     async def train(self):
         """Train/retrain the Isolation Forest model."""
@@ -150,7 +168,7 @@ class AnomalyDetector:
     async def detect(self, metrics: Dict[str, Any]) -> AnomalyResult:
         """Run anomaly detection on current metrics."""
         features = self.extract_features(metrics)
-        now = datetime.utcnow()
+        now = utcnow()
 
         if not self.is_trained or self.model is None:
             # Fallback: rule-based detection when model isn't ready

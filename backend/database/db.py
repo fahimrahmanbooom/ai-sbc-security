@@ -12,8 +12,9 @@ from sqlalchemy import String, Integer, Float, Boolean, Text, DateTime, JSON, se
 from sqlalchemy.sql import func
 
 
-DB_PATH = os.environ.get("DB_PATH", "/var/lib/ai-sbc-security/db.sqlite")
-os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+AISBC_DATA_DIR = os.environ.get("AISBC_DATA_DIR", "/var/lib/ai-sbc-security")
+DB_PATH = os.environ.get("DB_PATH") or os.path.join(AISBC_DATA_DIR, "db.sqlite")
+os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
 
 engine = create_async_engine(
     f"sqlite+aiosqlite:///{DB_PATH}",

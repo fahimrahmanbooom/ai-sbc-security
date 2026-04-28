@@ -14,6 +14,8 @@ import math
 
 import numpy as np
 
+from ..utils.time import utcnow
+
 logger = logging.getLogger("ai_sbc.predictor")
 
 
@@ -112,7 +114,7 @@ class ThreatPredictor:
 
     async def record(self, threat_score: float, timestamp: Optional[datetime] = None):
         """Record a threat observation."""
-        ts = timestamp or datetime.utcnow()
+        ts = timestamp or utcnow()
         async with self._lock:
             self.history.append((ts, float(max(0.0, min(1.0, threat_score)))))
             hour = ts.hour
@@ -122,12 +124,12 @@ class ThreatPredictor:
                 self.hourly_buckets[hour] = self.hourly_buckets[hour][-200:]
 
     def _get_recent_series(self, hours: int = 48) -> List[float]:
-        cutoff = datetime.utcnow() - timedelta(hours=hours)
+        cutoff = utcnow() - timedelta(hours=hours)
         return [score for ts, score in self.history if ts > cutoff]
 
     def _aggregate_to_hourly(self, hours: int = 48) -> List[float]:
         """Aggregate recent data into hourly averages."""
-        now = datetime.utcnow()
+        now = utcnow()
         hourly = []
         for h in range(hours, 0, -1):
             start = now - timedelta(hours=h)
@@ -182,7 +184,7 @@ class ThreatPredictor:
         base_preds = self.smoother.forecast(self.forecast_hours)
 
         # Apply seasonal adjustment
-        now = datetime.utcnow()
+        now = utcnow()
         hourly_predictions = []
         for i, base in enumerate(base_preds):
             future_hour = (now.hour + i + 1) % 24
@@ -247,7 +249,7 @@ class ThreatPredictor:
         return forecast
 
     def _empty_forecast(self) -> ThreatForecast:
-        now = datetime.utcnow()
+        now = utcnow()
         return ThreatForecast(
             generated_at=now,
             forecast_horizon_hours=self.forecast_hours,

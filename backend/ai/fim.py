@@ -21,6 +21,9 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+# Where mutable state lives. Override with AISBC_DATA_DIR for Docker/dev runs.
+AISBC_DATA_DIR = os.environ.get("AISBC_DATA_DIR", "/var/lib/ai-sbc-security")
+
 # ── Critical paths to monitor ─────────────────────────────────────────────────
 CRITICAL_PATHS: List[str] = [
     # Authentication & users
@@ -318,7 +321,9 @@ def classify_severity(event: FIMEvent, ml_label: str) -> str:
 
 # ── Core FIM engine ────────────────────────────────────────────────────────────
 class FileIntegrityMonitor:
-    def __init__(self, baseline_path: str = "/var/lib/ai-sbc-security/fim_baseline.json"):
+    def __init__(self, baseline_path: Optional[str] = None):
+        if baseline_path is None:
+            baseline_path = os.path.join(AISBC_DATA_DIR, "fim_baseline.json")
         self.baseline_path = baseline_path
         self.baseline: Dict[str, FileRecord] = {}
         self.classifier = ChangeClassifier()

@@ -6,6 +6,7 @@ back into the IDS engine for real-time blocking.
 """
 
 import asyncio
+import ipaddress
 import json
 import logging
 import os
@@ -20,7 +21,8 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-HONEYPOT_DATA_DIR = "/var/lib/ai-sbc-security/honeypot"
+AISBC_DATA_DIR = os.environ.get("AISBC_DATA_DIR", "/var/lib/ai-sbc-security")
+HONEYPOT_DATA_DIR = os.path.join(AISBC_DATA_DIR, "honeypot")
 
 # Ports the honeypot will emulate
 # Key: port, Value: (service_name, banner_template)
@@ -99,12 +101,14 @@ class PayloadClassifier:
             b"\x00root\x00", b"SSH-",
         ],
         "exploit_attempt": [
-            b"/../", b"../etc/passwd", b"cmd.exe", b"/bin/sh",
+            b"/../", b"../etc/passwd", b"cmd.exe", b"/bin/sh", b"/bin/bash",
             b"eval(", b"exec(", b"system(", b"passthru(",
             b"\x90\x90\x90\x90",  # NOP sled
             b"SELECT ", b"UNION ", b"DROP TABLE",
             b"<script>", b"<?php",
-            b"/etc/shadow", b"wget http", b"curl http",
+            b"/etc/passwd", b"/etc/shadow", b"/etc/hosts", b"/proc/self",
+            b".ssh/authorized_keys", b"id_rsa",
+            b"wget http", b"curl http", b"ncat ", b"nc -e",
         ],
         "recon": [
             b"HEAD /", b"OPTIONS *", b"HELP\r\n", b"VERSION\r\n",
@@ -184,10 +188,12 @@ class FingerprintClusterer:
             # Recency bonus
             if (probe.timestamp - cluster["last_seen"]) < 300:
                 score += 1.0
-            # IP similarity (same /24)
-                ip_net = ".".join(probe.src_ip.split(".")[:3])
-                if any(h.startswith(ip_net) for h in cluster["ips"]):
-                    score += 2.0
+            # IP similarity (same /24) — independent signal from recency.
+            # (Was previously nested inside the recency block due to
+            # mis-indentation, so it never fired for older clusters.)
+            ip_net = ".".join(probe.src_ip.split(".")[:3])
+            if any(h.startswith(ip_net) for h in cluster["ips"]):
+                score += 2.0
 
             if score > best_score:
                 best_score = score
@@ -365,8 +371,13 @@ class HoneypotEngine:
         self, src_ip: str, src_port: int,
         honeypot_port: int, service: str, payload: bytes
     ):
-        # Skip private IPs (loopback / RFC1918) unless in debug mode
-        if src_ip.startswith(("127.", "10.", "192.168.", "172.")):
+        # Skip private/loopback/link-local. Use ipaddress for correct RFC1918
+        # detection — startswith("172.") was over-matching public 172.32+ IPs.
+        try:
+            ip_obj = ipaddress.ip_address(src_ip)
+            if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local:
+                return
+        except ValueError:
             return
 
         payload_preview = payload[:128].decode("latin-1", errors="replace").replace("\n", "\\n").replace("\r", "\\r")

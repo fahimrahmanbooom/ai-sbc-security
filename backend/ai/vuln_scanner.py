@@ -22,7 +22,8 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-CACHE_DIR = "/var/lib/ai-sbc-security/vuln_cache"
+AISBC_DATA_DIR = os.environ.get("AISBC_DATA_DIR", "/var/lib/ai-sbc-security")
+CACHE_DIR = os.path.join(AISBC_DATA_DIR, "vuln_cache")
 NVD_CACHE_FILE = os.path.join(CACHE_DIR, "nvd_simplified.json")
 SCAN_RESULT_FILE = os.path.join(CACHE_DIR, "last_scan.json")
 

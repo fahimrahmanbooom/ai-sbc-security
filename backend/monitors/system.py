@@ -11,6 +11,8 @@ from typing import Dict, List, Optional, Any
 
 import psutil
 
+from ..utils.time import utcnow
+
 logger = logging.getLogger("ai_sbc.monitor.system")
 
 
@@ -75,7 +77,7 @@ def get_system_metrics() -> Dict[str, Any]:
         disk_read_mb = disk_write_mb = 0
 
     return {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": utcnow().isoformat(),
         "cpu_percent": round(cpu, 1),
         "cpu_count": psutil.cpu_count(),
         "cpu_freq_mhz": round(psutil.cpu_freq().current, 0) if psutil.cpu_freq() else None,

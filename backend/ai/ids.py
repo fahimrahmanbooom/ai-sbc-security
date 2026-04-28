@@ -14,6 +14,8 @@ from enum import Enum
 
 import numpy as np
 
+from ..utils.time import utcnow
+
 logger = logging.getLogger("ai_sbc.ids")
 
 
@@ -170,7 +172,7 @@ class PortScanDetector:
         self.ip_ports: Dict[str, deque] = defaultdict(lambda: deque())
 
     def record(self, src_ip: str, dest_port: int) -> Optional[IDSAlert]:
-        now = datetime.utcnow()
+        now = utcnow()
         cutoff = now - timedelta(seconds=self.window)
         q = self.ip_ports[src_ip]
         # Remove old entries
@@ -199,7 +201,7 @@ class BruteForceTracker:
         self.attempts: Dict[str, deque] = defaultdict(lambda: deque(maxlen=200))
 
     def record(self, ip: str, rule_name: str, threshold: int, window: int) -> bool:
-        now = datetime.utcnow()
+        now = utcnow()
         cutoff = now - timedelta(seconds=window)
         q = self.attempts[ip]
         while q and q[0] < cutoff:
@@ -253,7 +255,7 @@ class IDSEngine:
                     continue
 
                 alert = IDSAlert(
-                    timestamp=datetime.utcnow(),
+                    timestamp=utcnow(),
                     attack_type=rule["attack_type"],
                     source_ip=src_ip,
                     dest_port=None,
@@ -286,7 +288,7 @@ class IDSEngine:
         for rule in COMPILED_RULES:
             if rule["compiled"].search(cmdline):
                 alert = IDSAlert(
-                    timestamp=datetime.utcnow(),
+                    timestamp=utcnow(),
                     attack_type=rule["attack_type"],
                     source_ip="localhost",
                     dest_port=None,

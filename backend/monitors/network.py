@@ -4,6 +4,7 @@ Passive network traffic analysis using psutil.
 Tracks connections, unusual ports, bandwidth spikes, and geo-lookup.
 """
 import asyncio
+import ipaddress
 import logging
 import socket
 from collections import defaultdict, Counter, deque
@@ -11,6 +12,8 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Set, Any
 
 import psutil
+
+from ..utils.time import utcnow
 
 logger = logging.getLogger("ai_sbc.monitor.network")
 
@@ -42,10 +45,16 @@ def geo_lookup(ip: str) -> Optional[Dict[str, str]]:
     For production, replace with MaxMind GeoLite2 or ip-api.com.
     """
     try:
-        if ip.startswith("10.") or ip.startswith("192.168.") or ip.startswith("172."):
-            return {"country": "Local", "city": "LAN", "org": "Private Network"}
-        if ip in ("127.0.0.1", "::1", "0.0.0.0"):
-            return {"country": "Local", "city": "Loopback", "org": "localhost"}
+        # Use ipaddress so RFC1918 (incl. 172.16/12 — NOT all of 172.x.x.x)
+        # is detected correctly.
+        try:
+            ip_obj = ipaddress.ip_address(ip)
+            if ip_obj.is_loopback or ip in ("0.0.0.0",):
+                return {"country": "Local", "city": "Loopback", "org": "localhost"}
+            if ip_obj.is_private or ip_obj.is_link_local:
+                return {"country": "Local", "city": "LAN", "org": "Private Network"}
+        except ValueError:
+            pass
         hostname = socket.gethostbyaddr(ip)[0]
         return {"country": "Unknown", "city": "Unknown", "org": hostname}
     except:
@@ -176,7 +185,7 @@ class NetworkMonitor:
                         })
 
                 snapshot = {
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": utcnow().isoformat(),
                     "total_connections": len(conns),
                     "established": sum(1 for c in conns if c["status"] == "ESTABLISHED"),
                     "listening": sum(1 for c in conns if c["status"] == "LISTEN"),

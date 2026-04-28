@@ -30,6 +30,7 @@ from ..ai.vuln_scanner import get_vuln_scanner
 from ..ai.hardening import get_hardening_advisor
 from ..ai.honeypot import get_honeypot
 from ..ai.federated import get_fl_client
+from ..utils.time import utcnow
 
 router = APIRouter(prefix="/api", tags=["dashboard"])
 logger = logging.getLogger("ai_sbc.api.dashboard")
@@ -86,7 +87,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
             await websocket.send_text(json.dumps({
                 "type": "live_update",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utcnow().isoformat(),
                 "metrics": {
                     "cpu_percent": metrics.get("cpu_percent", 0),
                     "ram_percent": metrics.get("ram_percent", 0),
@@ -117,7 +118,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @router.get("/health")
 async def health():
-    return {"status": "operational", "timestamp": datetime.utcnow().isoformat()}
+    return {"status": "operational", "timestamp": utcnow().isoformat()}
 
 
 @router.get("/dashboard/overview")
@@ -142,7 +143,8 @@ async def get_overview(
     )
     recent_alerts = alert_result.scalars().all()
 
-    # Alert counts by severity
+    # Alert counts by severity (unresolved)
+    alerts_by_severity: Dict[str, int] = {}
     for sev in ["critical", "high", "medium", "low"]:
         r = await db.execute(
             select(func.count(Alert.id)).where(
@@ -150,6 +152,7 @@ async def get_overview(
                 Alert.resolved == False
             )
         )
+        alerts_by_severity[sev] = r.scalar() or 0
 
     # Total unresolved
     unresolved_r = await db.execute(
@@ -162,7 +165,7 @@ async def get_overview(
     blocked_count = blocked_r.scalar() or 0
 
     # 24h metric history
-    since = datetime.utcnow() - timedelta(hours=24)
+    since = utcnow() - timedelta(hours=24)
     hist_r = await db.execute(
         select(MetricSnapshot).where(MetricSnapshot.timestamp > since)
         .order_by(MetricSnapshot.timestamp)
@@ -193,6 +196,7 @@ async def get_overview(
         },
         "security": {
             "unresolved_alerts": unresolved_count,
+            "alerts_by_severity": alerts_by_severity,
             "blocked_ips": blocked_count,
             "ids_total_alerts": ids_stats.get("total_alerts", 0),
             "ids_critical": ids_stats.get("critical_alerts", 0),
@@ -706,7 +710,7 @@ async def system_update(current_user: User = Depends(get_current_user)):
                 "detail": detail,
                 "done":   done,
                 "error":  error,
-                "ts":     datetime.utcnow().isoformat(),
+                "ts":     utcnow().isoformat(),
             })
 
         # Helper: run a subprocess in a thread so the event loop stays alive
@@ -821,7 +825,7 @@ async def system_update(current_user: User = Depends(get_current_user)):
             await ws_manager.broadcast({
                 "type": "update_progress", "step": "Update complete — restarting",
                 "detail": "Dashboard will reconnect automatically in a few seconds.",
-                "done": True, "error": False, "ts": datetime.utcnow().isoformat(),
+                "done": True, "error": False, "ts": utcnow().isoformat(),
             })
             await asyncio.sleep(1.5)
             subprocess.Popen(
