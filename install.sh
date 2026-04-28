@@ -22,7 +22,7 @@ CONFIG_DIR="/etc/ai-sbc-security"
 SERVICE_NAME="ai-sbc-security"
 DEFAULT_PORT=7443
 REPO_URL="https://github.com/fahimrahmanbooom/ai-sbc-security"
-STEPS_TOTAL=8
+STEPS_TOTAL=9
 STEP_CURRENT=0
 LOG_FILE="/tmp/ai-sbc-install.log"
 SUDO=""
@@ -524,12 +524,18 @@ EOF
 install_service() {
     step_header "System Service"
 
-    # Packet capture capability
+    # File-level packet-capture capability — purely defensive. The systemd
+    # unit already grants AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN, and
+    # the service runs as root anyway, so this matters only if someone runs
+    # the venv python directly (e.g. for development). setcap routinely
+    # fails on overlayfs/tmpfs/NFS-backed venvs and on distros that lock
+    # capability changes on package-managed binaries — none of which are
+    # actual problems for the deployed service.
     PYTHON_BIN_VENV="$INSTALL_DIR/venv/bin/python3"
     if $SUDO setcap 'cap_net_raw+ep cap_net_admin+ep' "$PYTHON_BIN_VENV" >> "$LOG_FILE" 2>&1; then
-        ok "Packet capture capability (CAP_NET_RAW) set"
+        ok "Packet capture capability (CAP_NET_RAW) set on venv binary"
     else
-        warn "Could not set packet capture capability — network monitoring limited"
+        info "Skipped file-level setcap (not needed — systemd grants caps to the service directly)"
     fi
 
     # Stop existing service if running
