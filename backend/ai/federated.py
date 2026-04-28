@@ -24,7 +24,7 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 # Configuration
-FEDERATED_SERVER_URL = os.getenv("FEDERATED_SERVER_URL", "https://fed.ai-sbc-security.org")
+FEDERATED_SERVER_URL = os.getenv("FEDERATED_SERVER_URL", "https://app-cool-waterfall-4592.fly.dev")
 AISBC_DATA_DIR = os.environ.get("AISBC_DATA_DIR", "/var/lib/ai-sbc-security")
 FL_STATE_FILE = os.path.join(AISBC_DATA_DIR, "federated_state.json")
 # Cadences are env-overridable so testing doesn't have to wait 24 hours.
@@ -49,6 +49,8 @@ def _status_message(token: str) -> str:
         return "Last sync succeeded"
     if token == "model_not_trained":
         return "Local AI model still warming up — first sync after ~500 samples (~40 min)"
+    if token == "no_server_configured":
+        return "No aggregation server configured. Set FEDERATED_SERVER_URL in /etc/ai-sbc-security/env or deploy your own."
     if token == "server_unreachable":
         return "Aggregation server unreachable — check FEDERATED_SERVER_URL or deploy your own"
     if token == "deserialization_failed":
@@ -326,6 +328,12 @@ class FederatedLearningClient:
         # "Last attempt: 2m ago" even when nothing successful happens.
         self._state.last_upload_attempt_at = time.time()
 
+        if not FEDERATED_SERVER_URL:
+            self._state.last_upload_status = "no_server_configured"
+            self._save_state()
+            logger.info("FL: no FEDERATED_SERVER_URL configured, skipping upload")
+            return
+
         iforest = self._resolve_iforest()
         if iforest is None:
             self._state.last_upload_status = "model_not_trained"
@@ -382,6 +390,12 @@ class FederatedLearningClient:
 
     async def _download_weights(self):
         self._state.last_download_attempt_at = time.time()
+
+        if not FEDERATED_SERVER_URL:
+            self._state.last_download_status = "no_server_configured"
+            self._save_state()
+            logger.info("FL: no FEDERATED_SERVER_URL configured, skipping download")
+            return
 
         logger.info("FL: downloading aggregated weights")
 

@@ -288,9 +288,11 @@ export default function Settings() {
               // Pick the dominant status banner: failed > warming-up > waiting > ok
               const upStat = flStatus.last_upload_status
               const downStat = flStatus.last_download_status
+              const isNoServer = (s) => s === 'no_server_configured'
+              const noServerConfigured = isNoServer(upStat) || isNoServer(downStat)
               const isFailed = (s) => s === 'server_unreachable' || s === 'deserialization_failed'
                                        || s === 'apply_failed' || s?.startsWith('server_error_')
-              const anyFailed = isFailed(upStat) || isFailed(downStat)
+              const anyFailed = !noServerConfigured && (isFailed(upStat) || isFailed(downStat))
               const anyWarming = upStat === 'model_not_trained' || downStat === 'model_not_trained'
               const allWaiting = (!upStat || upStat === 'never_attempted')
                                   && (!downStat || downStat === 'never_attempted')
@@ -298,7 +300,10 @@ export default function Settings() {
               const upMin = Math.round((flStatus.upload_interval_seconds || 86400) / 60)
               const downMin = Math.round((flStatus.download_interval_seconds || 43200) / 60)
 
-              const banner = anyFailed
+              const banner = noServerConfigured
+                ? { tone: 'warning', title: 'No aggregation server configured',
+                    body: 'Set FEDERATED_SERVER_URL in /etc/ai-sbc-security/env to point to your own server, or deploy the bundled federated-server.' }
+                : anyFailed
                 ? { tone: 'danger', title: 'Sync failing',
                     body: flStatus.last_upload_message || flStatus.last_download_message }
                 : anyWarming

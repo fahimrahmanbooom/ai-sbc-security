@@ -357,6 +357,10 @@ install_sources() {
         ok "Repository cloned to $INSTALL_DIR"
     fi
 
+    # Clear stale federated learning state so old server_unreachable errors
+    # don't persist across reinstalls.
+    $SUDO rm -f "$DATA_DIR/federated_state.json" 2>/dev/null || true
+
     # Set permissions
     $SUDO chown -R root:root "$INSTALL_DIR" >> "$LOG_FILE" 2>&1 || true
     $SUDO chmod +x "$INSTALL_DIR/install.sh" 2>/dev/null || true
