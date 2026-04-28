@@ -179,6 +179,30 @@ force_rebuild() {
     echo ""
 }
 
+# ── uninstall: stop service, remove install dir, config, systemd unit ────────
+uninstall() {
+    if [ -f "$INSTALL_DIR/install.sh" ]; then
+        # Delegate to the installer's uninstall path — single source of truth
+        bash "$INSTALL_DIR/install.sh" --uninstall
+    else
+        # Fallback if install.sh is missing — pull it fresh and run --uninstall
+        warn "install.sh not found locally — fetching from GitHub..."
+        TMP=$(mktemp /tmp/ai-sbc-uninstall.XXXXXX.sh)
+        if curl -fsSL https://raw.githubusercontent.com/fahimrahmanbooom/ai-sbc-security/main/install.sh -o "$TMP"; then
+            bash "$TMP" --uninstall
+            rm -f "$TMP"
+        else
+            err "Could not download installer. Manual cleanup:"
+            echo "    sudo systemctl stop $SERVICE_NAME"
+            echo "    sudo systemctl disable $SERVICE_NAME"
+            echo "    sudo rm -f /etc/systemd/system/${SERVICE_NAME}.service"
+            echo "    sudo rm -rf $INSTALL_DIR /etc/ai-sbc-security /var/lib/ai-sbc-security"
+            echo "    sudo rm -f /usr/local/bin/aisbc"
+            exit 1
+        fi
+    fi
+}
+
 # ── Command dispatch ──────────────────────────────────────────────────────────
 case "${1:-}" in
   -up|update)
@@ -205,19 +229,28 @@ case "${1:-}" in
     systemctl stop "$SERVICE_NAME"
     ok "Service stopped."
     ;;
-  *)
+  -uninstall|uninstall)
+    uninstall
+    ;;
+  -h|--help|help|"")
     echo ""
     echo "  AI SBC Security CLI"
     echo ""
     echo "  Usage: sudo aisbc <command>"
     echo ""
-    echo "    -up        Pull latest from GitHub, rebuild what changed, restart"
-    echo "    -rebuild   Force-rebuild frontend regardless of git state"
-    echo "    -r         Restart the service"
-    echo "    -s         Show service status"
-    echo "    -l         Tail live logs"
-    echo "    -start     Start the service"
-    echo "    -stop      Stop the service"
+    echo "    -up         Pull latest from GitHub, rebuild what changed, restart"
+    echo "    -rebuild    Force-rebuild frontend regardless of git state"
+    echo "    -r          Restart the service"
+    echo "    -s          Show service status"
+    echo "    -l          Tail live logs"
+    echo "    -start      Start the service"
+    echo "    -stop       Stop the service"
+    echo "    -uninstall  Remove AI SBC Security completely"
     echo ""
+    ;;
+  *)
+    err "Unknown command: $1"
+    echo "  Run 'aisbc' with no arguments to see available commands."
+    exit 1
     ;;
 esac

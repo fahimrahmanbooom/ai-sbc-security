@@ -19,15 +19,32 @@
 
 ---
 
-## ⚡ One-Line Install
+## ⚡ One-Command Lifecycle
 
+The whole lifecycle — install, update, uninstall — is one command each from the terminal.
+
+### Install (new device)
 ```bash
 curl -sSL https://raw.githubusercontent.com/fahimrahmanbooom/ai-sbc-security/main/install.sh | bash
 ```
+Open `http://<your-device-ip>:7443` → create admin account → enable 2FA from Settings → you're protected. AI models begin training automatically.
 
-Open `http://<your-device-ip>:7443` → Create admin account → Set up 2FA → You're protected.
+### Update (after install)
+```bash
+sudo aisbc -up
+```
+Smart-update: pulls the latest code, rebuilds the frontend only if it changed, runs `pip install` only if `requirements.txt` changed, then restarts the service. Safe to run anytime — it no-ops if you're already on the latest commit. (You can also click **Update available** in the dashboard for the same flow with progress streamed over WebSocket.)
 
-**Uninstall:** `curl -sSL .../install.sh | bash -s -- --uninstall`
+### Uninstall (complete removal)
+```bash
+sudo aisbc -uninstall
+```
+Stops the service, removes the systemd unit, the install directory (`/opt/ai-sbc-security`), the config (`/etc/ai-sbc-security`), and the `aisbc` CLI itself. Asks before removing monitoring data (`/var/lib/ai-sbc-security`) so you can keep your alert history if you plan to reinstall.
+
+If `aisbc` isn't available (broken install), the curl fallback works:
+```bash
+curl -sSL https://raw.githubusercontent.com/fahimrahmanbooom/ai-sbc-security/main/install.sh | bash -s -- --uninstall
+```
 
 ---
 
@@ -35,17 +52,17 @@ Open `http://<your-device-ip>:7443` → Create admin account → Set up 2FA → 
 
 AI SBC Security is a **free, open-source, AI-first security monitoring platform** purpose-built for single board computers and lightweight Linux servers. Unlike heavyweight SIEM tools that require clusters to run, AI SBC Security boots in seconds on a Raspberry Pi 4 and immediately starts learning and defending your system.
 
-It runs a **4-engine AI stack** — anomaly detection, intrusion detection, log intelligence, and a predictive threat model — all offline, no cloud required. Every alert is scored, correlated, and explained in plain language so you know exactly what's happening and what to do about it.
+It runs a **9-engine AI stack** — anomaly detection, intrusion detection, log intelligence, predictive threat forecasting, file integrity, vulnerability scanning, hardening audit, honeypot deception, and opt-in federated learning — all offline, no cloud required. Every alert is scored, correlated, and explained in plain language so you know exactly what's happening and what to do about it. See [How the AI Works](#how-the-ai-works) for a deep-dive on each module.
 
 ---
 
 ## Features
 
-### 🤖 AI Engine — 4 Neural Security Layers
+### 🤖 AI Engine — Multi-Layer Detection Stack
 
 **Anomaly Detection** — Isolation Forest ML model that builds a behavioral baseline of your system in real time. It tracks 14 concurrent features including CPU, RAM, network rates, login patterns, connection counts, and temporal rhythms. Once trained (typically ~30 minutes), it flags deviations from normal with a confidence-calibrated score, even for novel zero-day attacks that no signature would catch.
 
-**Intrusion Detection System (IDS)** — A hybrid rule-based + behavioral engine with 12 attack categories mapped to MITRE ATT&CK. It detects SSH brute force, port scans, SQL injection, XSS, LFI/RFI path traversal, command injection, reverse shells, privilege escalation attempts, crypto-mining processes, and credential stuffing — all with configurable thresholds and a sliding-window deduplication engine so alerts are meaningful, not noisy.
+**Intrusion Detection System (IDS)** — A hybrid rule-based + behavioral engine with 11 signature rules covering 10 attack categories mapped to MITRE ATT&CK, plus a stateful port-scan detector. It detects SSH brute force, port scans, SQL injection, XSS, LFI/RFI path traversal, command injection, reverse shells, privilege escalation attempts, crypto-mining processes, and remote-execution one-liners — all with configurable thresholds and a sliding-window deduplication engine so alerts are meaningful, not noisy.
 
 **Log Intelligence** — A real-time log correlation engine that tails `/var/log/auth.log`, `syslog`, `kern.log`, nginx/apache access logs, fail2ban, and any custom paths. It parses, threat-scores, and correlates events across sources within configurable time windows, automatically surfacing insights like "IP X targeted 5 different users in 3 minutes" or "User Y is being attacked from 8 distinct IPs."
 
@@ -53,11 +70,11 @@ It runs a **4-engine AI stack** — anomaly detection, intrusion detection, log 
 
 ### 🔐 Security
 
-- **TOTP Two-Factor Authentication** — RFC 6238 compliant TOTP (Google Authenticator, Authy, any standard app). QR code setup in the dashboard. Required at first login.
-- **JWT Authentication** — Short-lived access tokens (60 min) + long-lived refresh tokens (7 days) with automatic silent refresh.
+- **TOTP Two-Factor Authentication** — RFC 6238 compliant TOTP (Google Authenticator, Authy, any standard app). QR code setup from the Settings page. Strongly recommended for production.
+- **JWT Authentication** — Short-lived access tokens (60 min, configurable via `JWT_EXPIRE_MINUTES`) + long-lived refresh tokens (7 days) with automatic silent refresh.
 - **Account Lockout** — Automatic account lockout after 5 failed login attempts (15-minute cooldown).
-- **Audit Log** — Every login, logout, alert action, IP block, and settings change is recorded with timestamp, IP, and user agent.
-- **Bcrypt Password Hashing** — Industry-standard bcrypt with configurable rounds.
+- **Audit Log** — Authentication events (registrations, login successes/failures, TOTP failures, password changes) are recorded with timestamp, IP, and user agent.
+- **Bcrypt Password Hashing** — Industry-standard bcrypt via `passlib` with deprecation-aware scheme handling.
 
 ### 📊 Dashboard
 
@@ -68,8 +85,14 @@ It runs a **4-engine AI stack** — anomaly detection, intrusion detection, log 
 - **Alerts Panel** — Full alert log with severity filtering (critical/high/medium/low/info), acknowledge and resolve actions, threat score ring visualization.
 - **AI Insights Tab** — 24-hour forecast chart with peak threat prediction, log correlation insights, IDS alert timeline with MITRE ATT&CK tags.
 - **Network Panel** — Live connection table, suspicious connection highlighting, bandwidth gauges, listening port inventory.
+- **File Integrity Panel** — FIM events list with severity badges and ML-classification labels, baseline summary by directory, force-rescan and rebaseline actions.
+- **Vulnerabilities Panel** — CVE findings ranked by AI priority with copy-paste fix commands, severity filtering, manual rescan trigger.
+- **Hardening Panel** — A–F score with category breakdown, AI summary, top recommendations, and per-check Auto Fix or Copy-for-manual-fix buttons.
+- **Honeypot Panel** — Live probes feed, attack-cluster visualization, top attackers list, payload previews.
 - **Blocked IPs Manager** — Add/remove IPs from blocklist, distinguish auto-blocked vs. manually blocked, view block history.
-- **Settings** — In-dashboard 2FA setup/teardown with QR code, password change, account info.
+- **Settings** — Security tab (2FA setup/teardown with QR code, password change), Account tab (user info), AI & Privacy tab (federated learning opt-in toggle and privacy budget display).
+- **Help & Documentation** — In-app guide for every dashboard section, including a deep-dive on each AI module's architecture.
+- **One-Click Update** — Built-in "Update available" indicator that pulls the latest code, rebuilds only what changed, and restarts the service in place — all visible via WebSocket progress stream.
 
 ### 🖥️ System Monitoring
 
@@ -182,8 +205,8 @@ uvicorn backend.main:app --host 0.0.0.0 --port 7443
 ## First-Time Setup
 
 1. **Open** `http://<device-ip>:7443`
-2. **Create your admin account** — first registered user is automatically admin
-3. **Set up 2FA** — you'll be prompted to scan a QR code and verify with your authenticator app
+2. **Create your admin account** — the first registered user is automatically promoted to admin
+3. **Enable 2FA from Settings → Security** — strongly recommended. Scan the QR code with any authenticator app (Google Authenticator, Authy, 1Password, etc.) and verify the 6-digit code to activate.
 4. **Dashboard is live** — AI models begin warming up immediately
 
 The anomaly detection model reaches full confidence after collecting ~500 samples (~40 minutes at 5-second intervals). Until then, it operates in fallback rule-based mode.
@@ -272,10 +295,12 @@ flowchart TB
 
         subgraph AI["🤖 AI Engine"]
             IF["Isolation Forest\nAnomaly Detection"]
-            IDS["Hybrid IDS\n12 Attack Categories"]
+            IDS["Hybrid IDS\nSignature + Behavioral"]
             LC["Log Correlator\nCross-source Intel"]
             HW["Holt-Winters\nThreat Predictor"]
             FIM["File Integrity\nSHA256 + ML"]
+            VS["CVE Scanner\nAI Prioritization"]
+            HA["Hardening Advisor\n34 Checks"]
             HP["AI Honeypot\nDeception Layer"]
             FL["Federated Learning\nPrivacy-aware"]
         end

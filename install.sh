@@ -671,6 +671,9 @@ uninstall() {
     sudo rm -rf "$INSTALL_DIR" "$CONFIG_DIR"
     ok "Application files removed"
 
+    sudo rm -f /usr/local/bin/aisbc
+    ok "aisbc CLI removed"
+
     echo ""
     read -p "  Remove all monitoring data ($DATA_DIR)? [y/N] " -n 1 -r </dev/tty; echo ""
     [[ $REPLY =~ ^[Yy]$ ]] && sudo rm -rf "$DATA_DIR" && ok "Data directory removed"

@@ -165,9 +165,14 @@ export default function DashboardLayout() {
         {/* Bottom */}
         <div style={{ padding: '8px 6px', borderTop: '1px solid var(--border)' }}>
           {/* Connection status */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', marginBottom: 2 }}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '6px 10px', marginBottom: 2,
+            justifyContent: collapsed ? 'center' : 'flex-start',
+          }}
                title={collapsed ? (status === 'connected' ? 'Live' : 'Reconnecting') : undefined}>
-            <span className={`dot ${status === 'connected' ? 'dot-green' : 'dot-yellow'}`} />
+            <span className={`dot ${status === 'connected' ? 'dot-green' : 'dot-yellow'}`}
+              style={{ flexShrink: 0 }} />
             <AnimatePresence>
               {!collapsed && (
                 <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
