@@ -27,13 +27,38 @@ logger = logging.getLogger(__name__)
 FEDERATED_SERVER_URL = os.getenv("FEDERATED_SERVER_URL", "https://fed.ai-sbc-security.org")
 AISBC_DATA_DIR = os.environ.get("AISBC_DATA_DIR", "/var/lib/ai-sbc-security")
 FL_STATE_FILE = os.path.join(AISBC_DATA_DIR, "federated_state.json")
-FL_UPLOAD_INTERVAL = 3600 * 24      # 24 hours between uploads
-FL_DOWNLOAD_INTERVAL = 3600 * 12   # 12 hours between downloads
+# Cadences are env-overridable so testing doesn't have to wait 24 hours.
+# Set FL_UPLOAD_INTERVAL=300 in /etc/ai-sbc-security/env to upload every 5 min.
+FL_UPLOAD_INTERVAL = int(os.environ.get("FL_UPLOAD_INTERVAL", 3600 * 24))
+FL_DOWNLOAD_INTERVAL = int(os.environ.get("FL_DOWNLOAD_INTERVAL", 3600 * 12))
+# Loop wake interval — also overridable so changes to upload/download
+# intervals are honoured promptly during testing.
+FL_LOOP_WAKE_INTERVAL = int(os.environ.get("FL_LOOP_WAKE_INTERVAL", 3600))
 
 # Differential privacy parameters
 DP_NOISE_MULTIPLIER = 0.1     # Gaussian noise σ = noise_multiplier × sensitivity
 DP_SENSITIVITY = 1.0          # L2 sensitivity of model weights
 DP_CLIP_NORM = 1.0            # Gradient clipping norm
+
+
+def _status_message(token: str) -> str:
+    """Map a machine-readable status token to a human-friendly explanation."""
+    if not token or token == "never_attempted":
+        return "Waiting for first scheduled sync"
+    if token == "ok":
+        return "Last sync succeeded"
+    if token == "model_not_trained":
+        return "Local AI model still warming up — first sync after ~500 samples (~40 min)"
+    if token == "server_unreachable":
+        return "Aggregation server unreachable — check FEDERATED_SERVER_URL or deploy your own"
+    if token == "deserialization_failed":
+        return "Server responded but the payload was malformed"
+    if token == "apply_failed":
+        return "Downloaded weights could not be applied to the local model"
+    if token.startswith("server_error_"):
+        code = token.removeprefix("server_error_")
+        return f"Server returned HTTP {code}"
+    return token
 
 
 # ── Differential Privacy ───────────────────────────────────────────────────────
@@ -178,14 +203,25 @@ class ModelSerializer:
 # ── Federated client ───────────────────────────────────────────────────────────
 @dataclass
 class FLState:
-    enabled: bool = True
-    last_upload: float = 0.0
-    last_download: float = 0.0
+    # Off by default. The aggregation server has to be deployed and reachable
+    # for FL to do anything useful; users opt in deliberately from Settings.
+    enabled: bool = False
+    last_upload: float = 0.0           # last *successful* upload
+    last_download: float = 0.0         # last *successful* download
     total_uploads: int = 0
     total_downloads: int = 0
     node_id: str = ""
     privacy_budget_used: float = 0.0
     last_error: str = ""
+    # Diagnostic fields so the dashboard can explain why counters are zero.
+    # last_*_attempt_at: timestamp of the most recent attempt (success or fail).
+    # last_*_status:     short machine-readable token. Possible values:
+    #   "never_attempted" | "model_not_trained" | "ok" |
+    #   "server_unreachable" | "server_error_<code>" | "deserialization_failed"
+    last_upload_attempt_at: float = 0.0
+    last_upload_status: str = "never_attempted"
+    last_download_attempt_at: float = 0.0
+    last_download_status: str = "never_attempted"
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -283,16 +319,24 @@ class FederatedLearningClient:
                 self._state.last_error = str(e)
                 logger.error("FL: loop error: %s", e)
 
-            await asyncio.sleep(3600)
+            await asyncio.sleep(FL_LOOP_WAKE_INTERVAL)
 
     async def _upload_weights(self):
+        # Always record the attempt timestamp so the dashboard can show
+        # "Last attempt: 2m ago" even when nothing successful happens.
+        self._state.last_upload_attempt_at = time.time()
+
         iforest = self._resolve_iforest()
         if iforest is None:
+            self._state.last_upload_status = "model_not_trained"
+            self._save_state()
             logger.info("FL: model not trained yet, skipping upload")
             return
 
         weights = self._serializer.extract_weights(iforest)
         if not weights:
+            self._state.last_upload_status = "model_not_trained"
+            self._save_state()
             return
 
         payload_bytes = self._serializer.serialize(weights)
@@ -313,7 +357,7 @@ class FederatedLearningClient:
             len(payload_bytes), upload_pkg["dp_epsilon"],
         )
 
-        success = await self._http_post(
+        success, status = await self._http_post(
             f"{FEDERATED_SERVER_URL}/api/v1/submit",
             payload_bytes,
             headers={
@@ -324,6 +368,8 @@ class FederatedLearningClient:
             }
         )
 
+        self._state.last_upload_status = status
+
         if success:
             self._state.last_upload = time.time()
             self._state.total_uploads += 1
@@ -331,62 +377,91 @@ class FederatedLearningClient:
             self._save_state()
             logger.info("FL: upload successful (total uploads=%d)", self._state.total_uploads)
         else:
-            logger.warning("FL: upload failed")
+            self._save_state()
+            logger.warning("FL: upload failed (%s)", status)
 
     async def _download_weights(self):
+        self._state.last_download_attempt_at = time.time()
+
         logger.info("FL: downloading aggregated weights")
 
-        data = await self._http_get(
+        data, status = await self._http_get(
             f"{FEDERATED_SERVER_URL}/api/v1/global_model",
             headers={"X-Node-ID": self._state.node_id}
         )
 
         if not data:
-            logger.warning("FL: download failed or no model available yet")
+            self._state.last_download_status = status
+            self._save_state()
+            logger.warning("FL: download failed (%s)", status)
             return
 
         federated_weights = self._serializer.deserialize(data)
         if not federated_weights:
+            self._state.last_download_status = "deserialization_failed"
+            self._save_state()
             return
 
         iforest = self._resolve_iforest()
-        if iforest is not None:
-            applied = self._serializer.apply_federated_weights(
-                iforest, federated_weights
-            )
-            if applied:
-                self._state.last_download = time.time()
-                self._state.total_downloads += 1
-                self._save_state()
-                logger.info("FL: downloaded and applied community weights")
+        if iforest is None:
+            # We got valid community weights but have no local model to merge into.
+            self._state.last_download_status = "model_not_trained"
+            self._save_state()
+            return
 
-    async def _http_post(self, url: str, data: bytes, headers: dict) -> bool:
+        applied = self._serializer.apply_federated_weights(iforest, federated_weights)
+        if applied:
+            self._state.last_download = time.time()
+            self._state.last_download_status = "ok"
+            self._state.total_downloads += 1
+            self._save_state()
+            logger.info("FL: downloaded and applied community weights")
+        else:
+            self._state.last_download_status = "apply_failed"
+            self._save_state()
+
+    async def _http_post(self, url: str, data: bytes, headers: dict) -> Tuple[bool, str]:
+        """
+        POST data and return (success, status_token).
+        status_token is one of:
+          "ok" | "server_error_<code>" | "server_unreachable"
+        """
         try:
             import aiohttp
             timeout = aiohttp.ClientTimeout(total=30)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(url, data=data, headers=headers, ssl=True) as resp:
-                    return resp.status in (200, 201, 202)
+                    if resp.status in (200, 201, 202):
+                        return True, "ok"
+                    return False, f"server_error_{resp.status}"
         except Exception as e:
             logger.debug("FL: HTTP POST error: %s", e)
-            return False
+            return False, "server_unreachable"
 
-    async def _http_get(self, url: str, headers: dict) -> Optional[bytes]:
+    async def _http_get(self, url: str, headers: dict) -> Tuple[Optional[bytes], str]:
+        """
+        GET and return (body_or_none, status_token).
+        status_token: "ok" | "server_error_<code>" | "server_unreachable"
+        """
         try:
             import aiohttp
             timeout = aiohttp.ClientTimeout(total=30)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url, headers=headers, ssl=True) as resp:
                     if resp.status == 200:
-                        return await resp.read()
+                        return await resp.read(), "ok"
+                    return None, f"server_error_{resp.status}"
         except Exception as e:
             logger.debug("FL: HTTP GET error: %s", e)
-        return None
+            return None, "server_unreachable"
 
     def get_status(self) -> dict:
+        # Translate the machine-readable status tokens into a friendly
+        # message so the dashboard doesn't have to know the vocabulary.
         return {
             "enabled": self._state.enabled,
             "node_id_prefix": self._state.node_id[:8] + "...",
+            "server_url": FEDERATED_SERVER_URL,
             "total_uploads": self._state.total_uploads,
             "total_downloads": self._state.total_downloads,
             "last_upload_iso": datetime.fromtimestamp(
@@ -395,6 +470,18 @@ class FederatedLearningClient:
             "last_download_iso": datetime.fromtimestamp(
                 self._state.last_download, tz=timezone.utc
             ).isoformat() if self._state.last_download else None,
+            "last_upload_attempt_iso": datetime.fromtimestamp(
+                self._state.last_upload_attempt_at, tz=timezone.utc
+            ).isoformat() if self._state.last_upload_attempt_at else None,
+            "last_download_attempt_iso": datetime.fromtimestamp(
+                self._state.last_download_attempt_at, tz=timezone.utc
+            ).isoformat() if self._state.last_download_attempt_at else None,
+            "last_upload_status": self._state.last_upload_status,
+            "last_download_status": self._state.last_download_status,
+            "last_upload_message": _status_message(self._state.last_upload_status),
+            "last_download_message": _status_message(self._state.last_download_status),
+            "upload_interval_seconds": FL_UPLOAD_INTERVAL,
+            "download_interval_seconds": FL_DOWNLOAD_INTERVAL,
             "privacy_budget_used_epsilon": round(self._state.privacy_budget_used, 6),
             "privacy_guarantees": {
                 "noise_multiplier": self._dp.noise_multiplier,

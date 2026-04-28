@@ -284,26 +284,88 @@ export default function Settings() {
             </div>
 
             {/* FL Status */}
-            {flStatus && flStatus.enabled && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
-                {[
-                  { label: 'Node ID', value: flStatus.node_id_prefix },
-                  { label: 'Total Uploads', value: flStatus.total_uploads },
-                  { label: 'Total Downloads', value: flStatus.total_downloads },
-                  { label: 'Privacy Budget (ε)', value: flStatus.privacy_budget_used_epsilon?.toFixed(6) || '0' },
-                  { label: 'Last Upload', value: flStatus.last_upload_iso ? new Date(flStatus.last_upload_iso).toLocaleString() : 'Never' },
-                  { label: 'Last Download', value: flStatus.last_download_iso ? new Date(flStatus.last_download_iso).toLocaleString() : 'Never' },
-                ].map(item => (
-                  <div key={item.label} style={{
-                    padding: '8px 12px', borderRadius: 'var(--radius-sm)',
-                    background: 'var(--bg-surface)', border: '1px solid var(--border)',
-                  }}>
-                    <div style={{ fontSize: 10, color: 'var(--text-3)', marginBottom: 3 }}>{item.label}</div>
-                    <div style={{ fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-1)' }}>{item.value}</div>
+            {flStatus && flStatus.enabled && (() => {
+              // Pick the dominant status banner: failed > warming-up > waiting > ok
+              const upStat = flStatus.last_upload_status
+              const downStat = flStatus.last_download_status
+              const isFailed = (s) => s === 'server_unreachable' || s === 'deserialization_failed'
+                                       || s === 'apply_failed' || s?.startsWith('server_error_')
+              const anyFailed = isFailed(upStat) || isFailed(downStat)
+              const anyWarming = upStat === 'model_not_trained' || downStat === 'model_not_trained'
+              const allWaiting = (!upStat || upStat === 'never_attempted')
+                                  && (!downStat || downStat === 'never_attempted')
+
+              const upMin = Math.round((flStatus.upload_interval_seconds || 86400) / 60)
+              const downMin = Math.round((flStatus.download_interval_seconds || 43200) / 60)
+
+              const banner = anyFailed
+                ? { tone: 'danger', title: 'Sync failing',
+                    body: flStatus.last_upload_message || flStatus.last_download_message }
+                : anyWarming
+                ? { tone: 'warning', title: 'AI model warming up',
+                    body: 'First federated sync happens after the local anomaly detector has trained on enough data — typically ~40 minutes after install.' }
+                : allWaiting
+                ? { tone: 'info', title: 'Waiting for first sync',
+                    body: `Uploads scheduled every ${upMin} min, downloads every ${downMin} min. Set FL_UPLOAD_INTERVAL in /etc/ai-sbc-security/env to override during testing.` }
+                : null
+
+              const toneColor = banner && {
+                danger: 'var(--danger)', warning: 'var(--warning)', info: 'var(--accent)',
+              }[banner.tone]
+
+              return (
+                <>
+                  {banner && (
+                    <div style={{
+                      padding: '10px 14px', borderRadius: 'var(--radius-sm)', marginBottom: 12,
+                      background: `${toneColor}11`,
+                      border: `1px solid ${toneColor}55`,
+                      display: 'flex', alignItems: 'flex-start', gap: 10,
+                    }}>
+                      <span style={{ fontSize: 14, color: toneColor, flexShrink: 0, marginTop: 1 }}>
+                        {banner.tone === 'danger' ? '⚠' : banner.tone === 'warning' ? '◐' : 'ⓘ'}
+                      </span>
+                      <div style={{ fontSize: 12, lineHeight: 1.55 }}>
+                        <div style={{ fontWeight: 700, color: toneColor, marginBottom: 2 }}>{banner.title}</div>
+                        <div style={{ color: 'var(--text-2)' }}>{banner.body}</div>
+                        {banner.tone === 'danger' && flStatus.server_url && (
+                          <div style={{ marginTop: 4, fontSize: 11, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
+                            Server: {flStatus.server_url}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+                    {[
+                      { label: 'Node ID', value: flStatus.node_id_prefix },
+                      { label: 'Total Uploads', value: flStatus.total_uploads },
+                      { label: 'Total Downloads', value: flStatus.total_downloads },
+                      { label: 'Privacy Budget (ε)', value: flStatus.privacy_budget_used_epsilon?.toFixed(6) || '0' },
+                      { label: 'Last Upload', value: flStatus.last_upload_iso ? new Date(flStatus.last_upload_iso).toLocaleString() : 'Never' },
+                      { label: 'Last Download', value: flStatus.last_download_iso ? new Date(flStatus.last_download_iso).toLocaleString() : 'Never' },
+                      { label: 'Last Upload Attempt',
+                        value: flStatus.last_upload_attempt_iso
+                          ? `${new Date(flStatus.last_upload_attempt_iso).toLocaleString()} — ${flStatus.last_upload_message}`
+                          : flStatus.last_upload_message },
+                      { label: 'Last Download Attempt',
+                        value: flStatus.last_download_attempt_iso
+                          ? `${new Date(flStatus.last_download_attempt_iso).toLocaleString()} — ${flStatus.last_download_message}`
+                          : flStatus.last_download_message },
+                    ].map(item => (
+                      <div key={item.label} style={{
+                        padding: '8px 12px', borderRadius: 'var(--radius-sm)',
+                        background: 'var(--bg-surface)', border: '1px solid var(--border)',
+                      }}>
+                        <div style={{ fontSize: 10, color: 'var(--text-3)', marginBottom: 3 }}>{item.label}</div>
+                        <div style={{ fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-1)', wordBreak: 'break-word' }}>{item.value}</div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
+                </>
+              )
+            })()}
 
             <div style={{ display: 'flex', gap: 8 }}>
               {!flStatus?.enabled ? (

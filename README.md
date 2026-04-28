@@ -253,7 +253,10 @@ These are read at process startup. The systemd installer sets them in `/etc/ai-s
 | `AISBC_DATA_DIR` | `/var/lib/ai-sbc-security` | Root directory for all persisted state (DB, AI models, FIM baseline, vuln cache, honeypot data, federated learning state). Override for Docker, dev, or non-standard installs. |
 | `DB_PATH` | `${AISBC_DATA_DIR}/db.sqlite` | SQLite database path. Overrides `AISBC_DATA_DIR` for the DB only. |
 | `MODEL_PATH` | `${AISBC_DATA_DIR}/models` | Where the anomaly model `.pkl` is stored. Falls back to `$TMPDIR/ai-sbc-models` if not writable. |
-| `FEDERATED_SERVER_URL` | `https://fed.ai-sbc-security.org` | Federated learning aggregator endpoint. Override to point at a private FL server. |
+| `FEDERATED_SERVER_URL` | `https://fed.ai-sbc-security.org` | Federated learning aggregator endpoint. The default URL is a placeholder — to actually use FL, deploy `federated-server/main.py` somewhere reachable and point this at it. |
+| `FL_UPLOAD_INTERVAL` | `86400` (24 h) | Seconds between FL upload attempts. Lower for testing (e.g. `300` = every 5 min). |
+| `FL_DOWNLOAD_INTERVAL` | `43200` (12 h) | Seconds between FL community-weight download attempts. |
+| `FL_LOOP_WAKE_INTERVAL` | `3600` (1 h) | How often the FL loop wakes to check whether an upload/download is due. Set lower than `FL_UPLOAD_INTERVAL` for testing. |
 | `JWT_EXPIRE_MINUTES` | `60` | Access-token lifetime in minutes. Refresh tokens are always 7 days. |
 | `CORS_ORIGINS` | *(empty — same-origin)* | Comma-separated list of allowed origins for cross-origin browser access. Set to `*` for fully open (this also disables `allow_credentials`, since browsers reject `*` + credentials). Leave empty if the dashboard is served from the same host as the API (the default deployment). |
 
@@ -447,7 +450,9 @@ Service-specific multipliers: SSH brute-force scoring is 1.5× on the SSH honeyp
 
 ### 9. Federated Learning — Privacy-Preserving Model Improvement
 
-**Opt-in only.** Disabled by default; toggle in Settings.
+**Opt-in only.** Disabled by default; toggle in Settings → AI & Privacy.
+
+**Server requirement.** FL is a two-sided feature — the client (in this repo) talks to an aggregation server (`federated-server/main.py`, also in this repo). The default `FEDERATED_SERVER_URL` points at `https://fed.ai-sbc-security.org` which is a placeholder; to actually federate, either deploy the included `federated-server/` on any reachable host (cloud VPS, a second SBC, even a docker container on your LAN) and set `FEDERATED_SERVER_URL` to its address, or leave FL disabled. When the configured server is unreachable, the dashboard's Settings panel shows the exact reason ("Server unreachable", "HTTP 404", etc.) instead of cryptic zeros.
 
 **What's transmitted.** ONLY the IsolationForest weight tensors — tree thresholds, node sample counts, value arrays. Limited to 20 trees per upload. **Never raw logs, IPs, usernames, hostnames, or any operational data.**
 
