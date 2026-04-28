@@ -558,9 +558,30 @@ async def hardening_autofix(body: dict, current_user: User = Depends(get_current
     if not fix_cmd:
         raise HTTPException(status_code=400, detail="No fix command available for this check")
 
-    # Strip leading `sudo` — the service already runs as root under systemd.
-    # Running sudo inside a root process with no TTY/sudoers causes PERM errors.
-    clean_cmd = _re.sub(r'^\s*sudo\s+', '', fix_cmd)
+    # Reject if the finding itself isn't auto-fixable. The Finding dataclass
+    # computes this from the command shape; if the field is missing (older
+    # cached report), recompute it here as a safety net.
+    auto_fixable = finding.get("auto_fixable")
+    if auto_fixable is None:
+        from ..ai.hardening import is_auto_fixable
+        auto_fixable = is_auto_fixable(fix_cmd)
+    if not auto_fixable:
+        raise HTTPException(
+            status_code=400,
+            detail=("This check needs manual remediation — the fix command "
+                    "contains placeholders or requires an interactive tool. "
+                    "Copy the command, fill in the values, and run it yourself."),
+        )
+
+    # Sanitize the command for non-interactive root execution:
+    #   1. Strip trailing shell comment ("# ...") — these are explanatory
+    #      annotations and break shell parsing when adjacent to redirects.
+    #   2. Strip ALL "sudo " occurrences, not just the leading one. The
+    #      service already runs as root, and sudo without a TTY fails.
+    clean_cmd = _re.sub(r'\s+#[^\n]*$', '', fix_cmd).strip()
+    clean_cmd = _re.sub(r'(^|\s)sudo\s+', r'\1', clean_cmd).strip()
+    if not clean_cmd:
+        raise HTTPException(status_code=400, detail="Fix command is empty after sanitization")
 
     try:
         result = subprocess.run(
@@ -576,6 +597,8 @@ async def hardening_autofix(body: dict, current_user: User = Depends(get_current
         }
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="Fix command timed out (30s limit)")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

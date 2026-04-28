@@ -227,6 +227,12 @@ export default function HardeningPanel() {
 function FindingRow({ finding, expanded, onClick, onAutoFixed }) {
   const color = SEV_COLOR[finding.severity] || 'var(--text-3)'
   const [fixing, setFixing] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  // The backend computes this from the fix_command shape (placeholders or
+  // interactive tools → not auto-fixable). Default to true for older reports
+  // that pre-date this field, the backend will still safely refuse them.
+  const autoFixable = finding.auto_fixable !== false
 
   const handleAutoFix = async (e) => {
     e.stopPropagation()
@@ -241,6 +247,18 @@ function FindingRow({ finding, expanded, onClick, onAutoFixed }) {
       toast.error(msg)
     } finally {
       setFixing(false)
+    }
+  }
+
+  const handleCopy = async (e) => {
+    e.stopPropagation()
+    try {
+      await navigator.clipboard.writeText(finding.fix_command)
+      setCopied(true)
+      toast.success('Command copied — fill in any <placeholders> before running')
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      toast.error('Could not copy to clipboard')
     }
   }
 
@@ -321,15 +339,39 @@ function FindingRow({ finding, expanded, onClick, onAutoFixed }) {
                     <div style={{ color: 'var(--text-3)', fontSize: 12, marginBottom: 4 }}>Fix command:</div>
                     {finding.fix_command}
                   </div>
-                  <button
-                    onClick={handleAutoFix}
-                    disabled={fixing}
-                    className="btn btn-success btn-sm"
-                    style={{ fontSize: 12 }}>
-                    {fixing
-                      ? <><span style={{ width: 11, height: 11, border: '2px solid rgba(63,185,80,0.3)', borderTopColor: 'var(--success)', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} /> Applying…</>
-                      : '⚡ Auto Fix'}
-                  </button>
+                  {autoFixable ? (
+                    <button
+                      onClick={handleAutoFix}
+                      disabled={fixing}
+                      className="btn btn-success btn-sm"
+                      style={{ fontSize: 12 }}>
+                      {fixing
+                        ? <><span style={{ width: 11, height: 11, border: '2px solid rgba(63,185,80,0.3)', borderTopColor: 'var(--success)', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} /> Applying…</>
+                        : '⚡ Auto Fix'}
+                    </button>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span
+                        title="This check requires manual remediation — copy the command, fill in any <placeholders>, and run it yourself."
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 6,
+                          padding: '5px 12px', borderRadius: 'var(--radius-sm)',
+                          fontSize: 12, fontWeight: 600,
+                          background: 'var(--bg)', color: 'var(--text-3)',
+                          border: '1px dashed var(--border-md)',
+                          cursor: 'not-allowed', userSelect: 'none',
+                        }}>
+                        ✋ Manual fix
+                      </span>
+                      <button
+                        onClick={handleCopy}
+                        className="btn btn-ghost btn-sm"
+                        title="Copy command to clipboard"
+                        style={{ fontSize: 12, padding: '5px 10px' }}>
+                        {copied ? '✓ Copied' : '⧉ Copy'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

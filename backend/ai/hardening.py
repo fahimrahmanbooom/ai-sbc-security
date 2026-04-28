@@ -36,7 +36,29 @@ class Finding:
     points_impact: int     # points deducted from 100 if failed
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        d["auto_fixable"] = is_auto_fixable(self.fix_command)
+        return d
+
+
+# Tools that need a TTY / interactive editor — never auto-runnable.
+_INTERACTIVE_TOOLS = ("visudo", "vipw", "vigr", "passwd ", "crontab -e")
+# Placeholders like <username>, <new_uid>, <binary_path> mean the operator must
+# choose a concrete value. The shell parses them as redirect operators, so
+# running them directly hits a syntax error.
+_PLACEHOLDER_RE = re.compile(r"<[a-zA-Z_][\w\-]*>")
+
+
+def is_auto_fixable(cmd: str) -> bool:
+    """A fix is auto-runnable only if it has no placeholders and no
+    interactive tools. Anything else needs the operator to fill in a value
+    or interact with a TTY."""
+    if not cmd or not cmd.strip():
+        return False
+    if _PLACEHOLDER_RE.search(cmd):
+        return False
+    lowered = cmd.lower()
+    return not any(tool in lowered for tool in _INTERACTIVE_TOOLS)
 
 
 @dataclass
