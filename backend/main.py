@@ -230,12 +230,19 @@ async def lifespan(app: FastAPI):
     sys_mon.add_callback(on_system_metrics)
     log_watcher.add_processor(on_log_line)
 
-    # Start all background services
-    await fim.start()
-    await vuln_scanner.start()
-    await hardening.start()
-    await honeypot.start()
-    await fl_client.start()
+    # Start all background services — each wrapped so one failure doesn't
+    # abort the lifespan and leave the database uninitialised.
+    for _svc, _name in [
+        (fim,         "FIM"),
+        (vuln_scanner,"VulnScanner"),
+        (hardening,   "Hardening"),
+        (honeypot,    "Honeypot"),
+        (fl_client,   "FederatedLearning"),
+    ]:
+        try:
+            await _svc.start()
+        except Exception as _e:
+            logger.warning("⚠ %s failed to start (%s) — continuing in degraded mode", _name, _e)
 
     tasks = [
         asyncio.create_task(sys_mon.run(), name="system_monitor"),

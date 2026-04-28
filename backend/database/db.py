@@ -119,8 +119,17 @@ async def init_db():
         await conn.run_sync(Base.metadata.create_all)
 
 
+# Safety flag: ensure tables are created before the first DB request even if
+# the lifespan startup was interrupted (e.g. a monitor failed to start).
+_db_ready = False
+
+
 async def get_db():
     """Dependency for FastAPI routes."""
+    global _db_ready
+    if not _db_ready:
+        await init_db()
+        _db_ready = True
     async with AsyncSessionLocal() as session:
         try:
             yield session
