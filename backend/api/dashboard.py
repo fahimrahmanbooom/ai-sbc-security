@@ -692,8 +692,7 @@ async def system_update(current_user: User = Depends(get_current_user)):
         raise HTTPException(status_code=409, detail="An update is already in progress")
 
     async def _run():
-        # Yield to the event loop so FastAPI can flush the HTTP 200 response
-        # to the client before any blocking subprocess calls begin.
+        # Small yield so FastAPI flushes the HTTP 200 before we start work.
         await asyncio.sleep(0.2)
 
         repo = _install_dir()
@@ -710,75 +709,80 @@ async def system_update(current_user: User = Depends(get_current_user)):
                 "ts":     datetime.utcnow().isoformat(),
             })
 
+        # Helper: run a subprocess in a thread so the event loop stays alive
+        # and WebSocket messages can flow during long-running commands.
+        def _run_proc(*args, cwd=None, shell=False, timeout=60):
+            return subprocess.run(
+                args if not shell else args[0],
+                capture_output=True, text=True,
+                cwd=cwd, shell=shell, timeout=timeout,
+            )
+
         try:
             await prog("Checking for updates…")
 
-            # Record old HEAD before pull
-            old_sha = _git("rev-parse", "HEAD", cwd=repo)
+            old_sha = await asyncio.to_thread(_run_proc, "git", "rev-parse", "HEAD", cwd=repo)
+            old_sha = old_sha.stdout.strip()
 
             await prog("Fetching latest code…")
-            fetch = subprocess.run(
-                ["git", "fetch", "origin", "main"],
-                capture_output=True, text=True, cwd=repo, timeout=60,
+            fetch = await asyncio.to_thread(
+                _run_proc, "git", "fetch", "origin", "main", cwd=repo, timeout=60
             )
             if fetch.returncode != 0:
                 await prog("Git fetch failed", fetch.stderr[:300], error=True)
                 return
 
-            # Fix directory permissions so git can unlink/overwrite files.
-            # The service's CapabilityBoundingSet drops CAP_DAC_OVERRIDE so we
-            # must ensure every directory under the repo is writable by its owner.
+            # Fix permissions before git reset so capability-restricted root
+            # can unlink/overwrite source files.
             await prog("Fixing permissions…")
-            subprocess.run(
-                ["find", str(repo), "-not", "-path", "*/.git/*",
-                 "-type", "d", "-exec", "chmod", "u+rwx", "{}", "+"],
-                capture_output=True, cwd=repo,
+            await asyncio.to_thread(
+                _run_proc,
+                "find", str(repo), "-not", "-path", "*/.git/*",
+                "-type", "d", "-exec", "chmod", "u+rwx", "{}", "+",
+                cwd=repo, timeout=30,
             )
-            subprocess.run(
-                ["find", str(repo), "-not", "-path", "*/.git/*",
-                 "-type", "f", "-exec", "chmod", "u+rw", "{}", "+"],
-                capture_output=True, cwd=repo,
+            await asyncio.to_thread(
+                _run_proc,
+                "find", str(repo), "-not", "-path", "*/.git/*",
+                "-type", "f", "-exec", "chmod", "u+rw", "{}", "+",
+                cwd=repo, timeout=30,
             )
-            # Also ensure .git itself is writable (needed to update .git/index)
-            subprocess.run(
-                ["chmod", "-R", "u+rw", os.path.join(str(repo), ".git")],
-                capture_output=True,
+            await asyncio.to_thread(
+                _run_proc, "chmod", "-R", "u+rw",
+                os.path.join(str(repo), ".git"), timeout=15,
             )
 
-            # Hard-reset to remote — handles diverged branches cleanly
             await prog("Applying update…")
-            reset = subprocess.run(
-                ["git", "reset", "--hard", "origin/main"],
-                capture_output=True, text=True, cwd=repo, timeout=30,
+            reset = await asyncio.to_thread(
+                _run_proc, "git", "reset", "--hard", "origin/main",
+                cwd=repo, timeout=30,
             )
             if reset.returncode != 0:
                 await prog("Git reset failed", reset.stderr[:300], error=True)
                 return
 
-            new_sha = _git("rev-parse", "HEAD", cwd=repo)
+            new_sha = await asyncio.to_thread(_run_proc, "git", "rev-parse", "HEAD", cwd=repo)
+            new_sha = new_sha.stdout.strip()
             await prog("Code updated", f"{old_sha[:7]} → {new_sha[:7]}")
 
-            # Check if frontend source changed between old and new HEAD
-            diff = subprocess.run(
-                ["git", "diff", "--name-only", old_sha, new_sha, "--", "frontend/"],
-                capture_output=True, text=True, cwd=repo,
+            diff = await asyncio.to_thread(
+                _run_proc, "git", "diff", "--name-only", old_sha, new_sha, "--", "frontend/",
+                cwd=repo, timeout=15,
             )
             frontend_changed = bool(diff.stdout.strip()) or old_sha == new_sha
 
             if frontend_changed:
                 await prog("Installing frontend dependencies…")
-                npm_i = subprocess.run(
-                    ["npm", "install"], capture_output=True, text=True,
-                    cwd=frontend, timeout=180,
+                npm_i = await asyncio.to_thread(
+                    _run_proc, "npm", "install", cwd=frontend, timeout=180,
                 )
                 if npm_i.returncode != 0:
                     await prog("npm install failed", npm_i.stderr[:300], error=True)
                     return
 
-                await prog("Building frontend…")
-                npm_b = subprocess.run(
-                    ["npm", "run", "build"], capture_output=True, text=True,
-                    cwd=frontend, timeout=300,
+                await prog("Building frontend… (this takes ~60s on SBCs)")
+                npm_b = await asyncio.to_thread(
+                    _run_proc, "npm", "run", "build", cwd=frontend, timeout=300,
                 )
                 if npm_b.returncode != 0:
                     await prog("Frontend build failed", npm_b.stderr[:300], error=True)
@@ -786,27 +790,27 @@ async def system_update(current_user: User = Depends(get_current_user)):
 
                 await prog("Deploying frontend…")
                 os.makedirs(static, exist_ok=True)
-                subprocess.run(
-                    f"cp -r {frontend}/dist/* {static}/",
-                    shell=True, check=True,
+                await asyncio.to_thread(
+                    _run_proc,
+                    f"rm -rf {static}/* && cp -r {frontend}/dist/* {static}/",
+                    shell=True, timeout=30,
                 )
                 await prog("Frontend deployed")
             else:
                 await prog("Frontend unchanged — skipping rebuild")
 
-            # Check if backend changed
-            back_diff = subprocess.run(
-                ["git", "diff", "--name-only", old_sha, new_sha, "--", "backend/"],
-                capture_output=True, text=True, cwd=repo,
+            back_diff = await asyncio.to_thread(
+                _run_proc, "git", "diff", "--name-only", old_sha, new_sha, "--", "backend/",
+                cwd=repo, timeout=15,
             )
             backend_changed = bool(back_diff.stdout.strip())
 
             if backend_changed:
                 await prog("Installing backend dependencies…")
-                pip = subprocess.run(
-                    ["pip", "install", "-r", "requirements.txt", "--break-system-packages",
-                     "--quiet"],
-                    capture_output=True, text=True,
+                pip = await asyncio.to_thread(
+                    _run_proc,
+                    "pip", "install", "-r", "requirements.txt",
+                    "--break-system-packages", "--quiet",
                     cwd=os.path.join(repo, "backend"), timeout=180,
                 )
                 if pip.returncode != 0:
@@ -814,13 +818,11 @@ async def system_update(current_user: User = Depends(get_current_user)):
             else:
                 await prog("Backend unchanged — skipping pip install")
 
-            await prog("Restarting service…")
             await ws_manager.broadcast({
                 "type": "update_progress", "step": "Update complete — restarting",
                 "detail": "Dashboard will reconnect automatically in a few seconds.",
                 "done": True, "error": False, "ts": datetime.utcnow().isoformat(),
             })
-            # Small delay so the frontend receives the final message
             await asyncio.sleep(1.5)
             subprocess.Popen(
                 ["systemctl", "restart", "ai-sbc-security"],
