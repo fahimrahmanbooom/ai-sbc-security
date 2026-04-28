@@ -20,7 +20,7 @@ from .api.dashboard import router as dashboard_router, broadcast_update
 from .monitors.system import get_system_monitor
 from .monitors.network import get_network_monitor
 from .monitors.log_watcher import get_log_watcher
-from .ai.anomaly import get_anomaly_detector
+from .ai.anomaly import get_anomaly_detector, get_anomaly_alert_gate
 from .ai.ids import get_ids_engine
 from .ai.log_intel import get_log_intel
 from .ai.predictor import get_predictor
@@ -53,11 +53,34 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("✓ Database initialized")
 
+    # One-shot cleanup: auto-resolve historical low-confidence anomaly alerts.
+    # The previous alerting threshold (score > 0.5) generated hundreds of
+    # borderline 'medium' rows. The gate now requires score >= 0.65 plus
+    # sustained-and-deduped, so anything in the DB below that bar is
+    # legacy noise. Resolved (not deleted) — still queryable with
+    # 'show resolved'.
+    from sqlalchemy import update
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            update(Alert)
+            .where(
+                Alert.category == "anomaly",
+                Alert.threat_score < 6.5,
+                Alert.resolved == False,
+            )
+            .values(resolved=True, acknowledged=True)
+        )
+        cleared = result.rowcount or 0
+        await db.commit()
+        if cleared:
+            logger.info(f"✓ Auto-resolved {cleared} historical low-confidence anomaly alert(s)")
+
     # Initialize singletons
     sys_mon = get_system_monitor()
     net_mon = get_network_monitor()
     log_watcher = get_log_watcher()
     anomaly = get_anomaly_detector()
+    anomaly_gate = get_anomaly_alert_gate()
     ids = get_ids_engine()
     log_intel = get_log_intel()
     predictor = get_predictor()
@@ -92,8 +115,10 @@ async def lifespan(app: FastAPI):
             )
             db.add(snap)
 
-            # Persist anomaly alerts
-            if result.is_anomaly and result.anomaly_score > 0.5:
+            # Persist anomaly alerts — only when the gate clears the result.
+            # The gate enforces: score >= 0.65, 3-of-5 sustained, and a
+            # 5-minute cooldown per anomalous-feature signature.
+            if anomaly_gate.should_alert(result):
                 alert = Alert(
                     severity=result.severity,
                     category="anomaly",

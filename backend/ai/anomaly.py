@@ -276,11 +276,103 @@ class AnomalyDetector:
         }
 
 
-# Singleton
+class AnomalyAlertGate:
+    """
+    Decides whether an AnomalyResult is *worth alerting on*.
+
+    The raw IsolationForest flags ~5% of polled samples as anomalous by
+    construction (contamination=0.05). Without filtering this produces a
+    constant trickle of borderline 'medium' alerts that drowns out real
+    signals. This gate applies three independent filters:
+
+      1. **Score floor** — only alert at score >= min_score (default 0.65,
+         i.e. high-severity tier and above).
+      2. **Sustained anomaly** — require K of the last N polls to be
+         anomalous before firing. Filters out transient one-off spikes
+         (a single browser tab opening, a brief network burst).
+      3. **Per-fingerprint cooldown** — same set of anomalous features
+         (e.g. ``cpu_percent + open_connections``) only re-alerts after
+         ``cooldown_seconds`` of quiet. Prevents one sustained anomaly
+         from creating one alert row per polling cycle.
+
+    All three apply together: a sample must clear the score floor, be
+    part of a sustained pattern, AND be outside cooldown for its
+    feature signature.
+    """
+
+    def __init__(
+        self,
+        min_score: float = 0.65,
+        sustained_required: int = 3,
+        sustained_window: int = 5,
+        cooldown_seconds: int = 300,
+    ):
+        self.min_score = min_score
+        self.sustained_required = sustained_required
+        self.sustained_window = sustained_window
+        self.cooldown_seconds = cooldown_seconds
+        # Track the last N anomaly bools (independent of which features)
+        self._recent_anomaly_flags: deque = deque(maxlen=sustained_window)
+        # Map fingerprint → last-alert datetime
+        self._last_alert_at: Dict[str, datetime] = {}
+
+    def _fingerprint(self, features: List[str]) -> str:
+        """Stable signature for an anomaly's anomalous-feature set."""
+        if not features:
+            return "_no_features"
+        return ",".join(sorted(features))
+
+    def should_alert(self, result: AnomalyResult) -> bool:
+        """Run the three filters and return True iff this result deserves an alert."""
+        # Always feed the sustained-window tracker, even if score is low,
+        # so the window reflects the current detection cadence accurately.
+        self._recent_anomaly_flags.append(bool(result.is_anomaly))
+
+        # Filter 1: score floor
+        if result.anomaly_score < self.min_score:
+            return False
+        if not result.is_anomaly:
+            return False
+
+        # Filter 2: sustained — at least K of last N polls flagged anomalous.
+        sustained = sum(1 for f in self._recent_anomaly_flags if f) >= self.sustained_required
+        if not sustained:
+            return False
+
+        # Filter 3: per-fingerprint cooldown.
+        fp = self._fingerprint(result.anomalous_features)
+        last = self._last_alert_at.get(fp)
+        if last is not None:
+            elapsed = (result.timestamp - last).total_seconds()
+            if elapsed < self.cooldown_seconds:
+                return False
+
+        # Cleared all three filters — record the alert moment for cooldown.
+        self._last_alert_at[fp] = result.timestamp
+        return True
+
+    def get_stats(self) -> Dict:
+        return {
+            "min_score": self.min_score,
+            "sustained_window": f"{self.sustained_required}-of-{self.sustained_window}",
+            "cooldown_seconds": self.cooldown_seconds,
+            "tracked_fingerprints": len(self._last_alert_at),
+            "recent_anomaly_flags": list(self._recent_anomaly_flags),
+        }
+
+
+# Singletons
 _detector: Optional[AnomalyDetector] = None
+_alert_gate: Optional[AnomalyAlertGate] = None
 
 def get_anomaly_detector() -> AnomalyDetector:
     global _detector
     if _detector is None:
         _detector = AnomalyDetector()
     return _detector
+
+def get_anomaly_alert_gate() -> AnomalyAlertGate:
+    global _alert_gate
+    if _alert_gate is None:
+        _alert_gate = AnomalyAlertGate()
+    return _alert_gate
