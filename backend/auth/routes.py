@@ -2,6 +2,16 @@
 AI SBC Security - Authentication Routes
 JWT + TOTP 2FA
 """
+# Passlib 1.7.4 accesses bcrypt.__about__.__version__ which was removed in
+# bcrypt 4.0. Patch it before passlib is imported so the CryptContext loads.
+try:
+    import bcrypt as _bcrypt
+    if not hasattr(_bcrypt, "__about__"):
+        import types as _types
+        _bcrypt.__about__ = _types.SimpleNamespace(__version__=_bcrypt.__version__)
+except Exception:
+    pass
+
 import logging
 import os
 import secrets
