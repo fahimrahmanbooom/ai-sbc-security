@@ -27,6 +27,16 @@ smart_update() {
 
     cd "$INSTALL_DIR" || exit 1
 
+    # Always make sure /usr/local/bin/aisbc matches the repo's aisbc, even
+    # when git says we're already on the latest commit. This protects
+    # against stale CLIs left behind from older installs that pre-date a
+    # newly-added command (like -uninstall).
+    if [ -f "$INSTALL_DIR/aisbc" ] && ! cmp -s "$INSTALL_DIR/aisbc" /usr/local/bin/aisbc 2>/dev/null; then
+        cp "$INSTALL_DIR/aisbc" /usr/local/bin/aisbc
+        chmod +x /usr/local/bin/aisbc
+        info "aisbc CLI refreshed from $INSTALL_DIR/aisbc"
+    fi
+
     echo ""
     info "Fetching latest info from GitHub..."
 
