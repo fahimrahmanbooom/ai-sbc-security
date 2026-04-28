@@ -208,7 +208,7 @@ body {
 /* ── Sidebar nav item ───────────────────────────────────────────────────────── */
 .nav-item {
   display: flex; align-items: center; gap: 10px;
-  padding: 7px 10px; border-radius: var(--radius-md);
+  padding: 10px 10px; border-radius: var(--radius-md);
   font-size: 14px; font-weight: 500; color: var(--text-2);
   cursor: pointer; transition: background 0.12s, color 0.12s;
   text-decoration: none; white-space: nowrap; overflow: hidden;
