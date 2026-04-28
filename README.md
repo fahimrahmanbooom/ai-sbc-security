@@ -220,6 +220,20 @@ monitors:
 
 Restart after changes: `sudo systemctl restart ai-sbc-security`
 
+### Environment Variables
+
+These are read at process startup. The systemd installer sets them in `/etc/ai-sbc-security/env`; for Docker or manual runs, export them before launching uvicorn.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `SECRET_KEY` | *(random per run)* | JWT signing key. **Required for production** — if unset, a random key is generated and `CRITICAL` is logged warning that all tokens will rotate on every restart. Generate with `python3 -c "import secrets; print(secrets.token_hex(32))"`. |
+| `AISBC_DATA_DIR` | `/var/lib/ai-sbc-security` | Root directory for all persisted state (DB, AI models, FIM baseline, vuln cache, honeypot data, federated learning state). Override for Docker, dev, or non-standard installs. |
+| `DB_PATH` | `${AISBC_DATA_DIR}/db.sqlite` | SQLite database path. Overrides `AISBC_DATA_DIR` for the DB only. |
+| `MODEL_PATH` | `${AISBC_DATA_DIR}/models` | Where the anomaly model `.pkl` is stored. Falls back to `$TMPDIR/ai-sbc-models` if not writable. |
+| `FEDERATED_SERVER_URL` | `https://fed.ai-sbc-security.org` | Federated learning aggregator endpoint. Override to point at a private FL server. |
+| `JWT_EXPIRE_MINUTES` | `60` | Access-token lifetime in minutes. Refresh tokens are always 7 days. |
+| `CORS_ORIGINS` | *(empty — same-origin)* | Comma-separated list of allowed origins for cross-origin browser access. Set to `*` for fully open (this also disables `allow_credentials`, since browsers reject `*` + credentials). Leave empty if the dashboard is served from the same host as the API (the default deployment). |
+
 ---
 
 ## API Reference
@@ -283,6 +297,142 @@ flowchart TB
     AI --> API
     AI --> DB
 ```
+
+---
+
+## How the AI Works
+
+AI SBC Security runs nine independent AI/ML modules, each chosen for a specific class of problem and tuned to fit on a Raspberry Pi 4 (≤200MB RAM, no GPU). Everything runs **offline**. There is no LLM, no GPU inference, and no cloud roundtrip in the hot path.
+
+### 1. Anomaly Detection — Isolation Forest
+
+**Model.** scikit-learn `IsolationForest` (100 trees) wrapped in a `Pipeline` with `StandardScaler`. Picked because it scales to many features without requiring labeled data, isolates outliers in O(n log n), and stays under 50MB RAM with the default settings.
+
+**Features (14).** CPU %, RAM %, disk %, four network rates (bytes & packets, in & out, per second), CPU temperature (normalized), login attempts/min, failed logins/min, open connections, process count, hour-of-day, day-of-week. The two temporal features let the model learn that 200 connections at 14:00 is normal but the same at 03:00 is not.
+
+**Training.** Online. Every 5-second metric snapshot is appended to a 5000-sample rolling buffer. Auto-retrain fires every 500 new samples (~40 minutes at 5 s polling). The trained model is persisted to `${MODEL_PATH}/anomaly_model.pkl` so restarts don't lose ground.
+
+**Inference.** Returns `-1` (anomaly) or `1` (normal) plus a decision-function score normalized to a 0–1 anomaly score. Severity bands: critical ≥ 0.85, high ≥ 0.65, medium ≥ 0.40, low otherwise. The detector also runs a z-score pass over each feature against the buffer mean to identify *which* features are anomalous, so alerts say "unusual activity in CPU and failed_logins" rather than "something's weird."
+
+**Fallback.** Until ~50 samples have been collected, a rule-based detector runs (CPU > 90, RAM > 92, failed logins > 10/min, network > 100 MB/s) so you have coverage from minute one.
+
+**Trade-offs.** Excellent for genuinely novel deviations and zero-day-ish behaviour. Will drift if an attacker very slowly shifts the baseline (tune `contamination` lower if your environment is unusually steady). Requires ~30 minutes of clean baseline data for full confidence.
+
+### 2. Intrusion Detection (IDS) — Hybrid Signature + Behavioral
+
+**Why hybrid.** Signature engines catch known attack patterns instantly (regex match is microseconds); behavioral detectors catch volumetric attacks that no single line gives away.
+
+**Signature engine.** 11 compiled regex rules, each tagged with a threat score, MITRE ATT&CK technique, and a `(threshold, window_seconds)` deduplication tuple. Rules cover SSH brute force, root SSH, invalid-user SSH, sudo escalation, SQLi, XSS, path traversal/LFI, command injection, crypto-mining process names, reverse-shell payloads, and `wget|bash` style remote-execution one-liners.
+
+**Sliding-window dedup.** Every match for a given (rule, source IP) is timestamped in a deque. The rule only fires when ≥ N matches have landed in the last W seconds. This is what stops a single mistyped password from generating an alert while still catching 20 attempts in 60 s.
+
+**Port-scan detector.** Stateful tracker per source IP — counts unique destination ports in a 60 s window; alerts at 15+. Whitelists `127.0.0.1` and `::1` so local processes don't trigger.
+
+**Process analyzer.** Same regex set runs over command lines so a `xmrig --pool=...` process is caught even if it leaves no log line.
+
+**Trade-offs.** Will not catch novel attacks (that's the anomaly engine's job). Tune `alert_threshold` in YAML if your environment has noisy logs.
+
+### 3. Log Intelligence — Keyword Scoring + Cross-Source Correlation
+
+**Per-line scoring.** Each log line is scored against a curated keyword dictionary across four severity tiers: critical (`reverse shell`, `rootkit`, `cryptominer`), high (`failed password`, `injection`, `permission denied`), medium (`port scan`, `fail2ban`, `blocked`), low (`login`, `logout`). Score = max weight of any matched keyword.
+
+**Per-line parsing.** Regex extracts timestamp, IP, user, level (debug/info/warning/error/critical), and process name. Source format auto-detected from filename (`/var/log/auth.log` → AUTH, `nginx/access.log` → NGINX, etc.).
+
+**Correlation engine** runs every 60 s and produces three insight types:
+- **Sustained attack** — same IP generates ≥ 3 high-severity events in 5 minutes
+- **Credential stuffing** — same IP attempts ≥ 3 distinct users with ≥ 5 failures in 5 minutes
+- **Account targeted** — same user fails auth from ≥ 3 different IPs in 5 minutes
+
+Each insight comes with affected IPs/users, event count, timespan, and concrete remediation commands (`iptables -A INPUT -s X -j DROP`, `passwd -l user`, etc.).
+
+**Trade-offs.** No heavy NLP — keyword dictionaries handle 95% of attack chatter at < 1 ms per line. Custom apps can be added via the `monitors.logs.watch_paths` YAML key.
+
+### 4. Threat Predictor — Holt-Winters + Seasonal Decomposition
+
+**Model stack.**
+- **Double Exponential Smoothing** (Holt's method, α = 0.25, β = 0.1) on hourly-aggregated threat scores. Captures trend (rising/falling/stable) and projects 24 hours ahead.
+- **Seasonal decomposition** with 24-hour period. Each hour's average is divided by the global mean to produce 24 seasonal factors, then applied to base predictions to capture daily attack rhythms ("attacks peak at 03:00 UTC every night").
+- **Statistical momentum** — recent 6-hour average vs. prior 6-hour average, mapped to [-1, +1] as a short-term escalation signal.
+
+**Output.** Hour-by-hour predictions with score, confidence (decays linearly from 1.0 at h+1 to 0.4 at h+24), and risk band. Plus an overall risk label, peak hour, trend label, and prose summary with prioritized recommendations.
+
+**Trade-offs.** Holt-Winters runs in microseconds with no external dependencies — perfect for SBCs. It forecasts based on what your past looks like, so it won't anticipate genuinely new attack waves; pair with the anomaly detector for those. Needs ~5 hours of data before forecasts are meaningful.
+
+### 5. File Integrity Monitor — SHA-256 + ML Triage
+
+**Baseline.** SHA-256 of every regular file under `CRITICAL_PATHS` (auth files, SSH config, sudoers, PAM, crontabs, systemd units, kernel modules, /etc, /usr/bin, /usr/sbin, /bin, /sbin) up to depth 3. Skips files > 50 MB and noisy extensions (`.pyc`, `.log`, `.tmp`, `.swp`). Saved to `${AISBC_DATA_DIR}/fim_baseline.json`.
+
+**Diff scan** runs every 5 minutes and emits `modified`, `added`, `deleted`, `permissions` events.
+
+**Severity classifier.** A 10-feature heuristic — is_critical_auth, is_executable, is_suid, odd_hour (< 06:00 or ≥ 22:00), rapid_change (≤ 60 s since last change to same path), size_spike (> 50% larger), permission_loosen (mode bits relaxed), root_owned_change, deleted_critical, new_executable. Weighted sum produces a 0–1 suspicion score → label (`benign`, `suspicious`, `malicious`).
+
+**Anomaly model.** After 200 events have been observed, an Isolation Forest trains on the feature vectors and is blended 60/40 with the heuristic score. This gradually adapts to *your* environment's normal change patterns (e.g. weekly package updates touching `/usr/bin`).
+
+**Auto-rebaseline.** Benign-classified changes silently update the baseline so apt/dnf upgrades don't generate noise. Only suspicious/malicious events fire callbacks.
+
+**Trade-offs.** Bulletproof against tampering once baselined, but the baseline itself must be protected — set strict permissions on `${AISBC_DATA_DIR}` so an attacker can't rewrite it.
+
+### 6. Vulnerability Scanner — CVE Match + AI Prioritization
+
+**Package enumeration.** `dpkg-query` (Debian/Ubuntu/Raspbian), `rpm` (RHEL/Fedora), or `apk` (Alpine) — auto-detected. Returns name, version, architecture, description.
+
+**CVE database.** 20 embedded high-impact CVEs always-available offline (Log4Shell, Dirty Pipe, PwnKit, Looney Tunables, XZ backdoor, OpenSSH agent RCE, etc.). Optional NVD cache file at `${AISBC_DATA_DIR}/vuln_cache/nvd_simplified.json` for broader coverage.
+
+**AI prioritizer.** Raw CVSS is adjusted by deployment-context modifiers:
+- **+ 1.5** if `attackVector=NETWORK` *and* the package is currently `LISTEN`ing on a port (mapped via psutil → process → package)
+- **+ 0.5** for `attackComplexity=LOW`
+- **+ 0.5** for `privilegesRequired=NONE` (unauthenticated)
+- **+ 0.3** for SBC-amplified packages (kernel, openssh, openssl, sudo, polkit, glibc, dbus, systemd, bash, dpkg)
+- **+ 0.5** for kernel/glibc local-privilege-escalation (physical SBC threat is real)
+- **− 0.5** if user interaction required, **− 0.3** for `attackComplexity=HIGH`
+
+The result is a 0–10 priority score, label (`critical/high/medium/low`), plain-English rationale ("CVSS 7.8 adjusted to 9.3: service is actively listening; low attack complexity; no authentication required"), and a copy-paste fix command.
+
+**Trade-offs.** Embedded CVE list is curated, not exhaustive. To extend coverage, drop a JSON file at the cache path with the same schema as the embedded entries.
+
+### 7. Hardening Advisor — Rule-Based Audit
+
+**Why rule-based.** Hardening best practices are stable and well-defined (CIS benchmarks, STIGs). ML adds nothing here; clarity matters more.
+
+**Domains audited (34 checks total).** SSH (8 sshd_config checks), firewall (active + default-deny), kernel sysctl (8 hardening params: `ip_forward`, `accept_source_route`, `accept_redirects`, `randomize_va_space`, `dmesg_restrict`, `tcp_syncookies`, `suid_dumpable`, `log_martians`), SUID binaries (vs. known-safe list), sudo (NOPASSWD entries, unrestricted ALL=(ALL) ALL grants), users (UID 0 duplicates, empty passwords, system accounts with login shells), services (telnet/rsh/rlogin/tftp/finger/talk plus open-port count), file permissions (shadow, passwd, gshadow, sudoers, crontab, sshd_config).
+
+**Scoring.** Each check has a points-impact (3–25). Total deducted vs. total possible → 0–100 score → grade (A+ ≥ 95, A ≥ 90, B ≥ 80, C ≥ 70, D ≥ 55, F < 40). Proportional, so adding more checks doesn't crash old scores.
+
+**AI summary generator.** Sorts failed findings by severity and points-impact, generates a plain-English posture summary ("Security posture: FAIR (72/100). 2 critical failures require immediate attention. Weakest areas: ssh, kernel.") and a prioritized recommendation list with copy-paste fix commands.
+
+**Auto-fix.** Each check ships with an idempotent fix command. The dashboard's `Auto Fix` button runs it directly (the service runs as root, so no sudo prompt). Always review the command before applying.
+
+### 8. Honeypot — Decoy Services + Payload Clustering
+
+**Listeners.** asyncio TCP servers on 10 attacker-magnet ports — 2222 (fake SSH), 8080 (fake HTTP), 23/2323 (fake Telnet), 3389 (fake RDP), 1433 (fake MSSQL), 3306 (fake MySQL), 6379 (fake Redis), 5900 (fake VNC), 21 (fake FTP). Each sends a service-realistic banner and reads up to 2 KB before closing.
+
+**Payload classifier.** Pattern dictionary across four categories:
+- **credential_brute_force** — `USER`/`PASS` strings, common credentials, repeated probes from same IP
+- **exploit_attempt** — directory traversal, sensitive paths (`/etc/passwd`, `/etc/shadow`, `/proc/self`, `~/.ssh/authorized_keys`), SQLi keywords, NOP sleds, web shells
+- **recon** — `HEAD`, `OPTIONS *`, `HELP`, `VERSION` style probes
+- **port_scan** — empty payload on connect (banner-grab without follow-up)
+
+Service-specific multipliers: SSH brute-force scoring is 1.5× on the SSH honeypot; SQLi scoring is 1.3× on MySQL/MSSQL.
+
+**Fingerprint clusterer.** Lightweight similarity grouping by (label match + port overlap + recency + same /24 subnet). Up to 20 active clusters; oldest is evicted when full. Lets the dashboard show "27 probes from the same /24 trying credential brute force" instead of 27 separate alerts.
+
+**Auto-feed to IDS.** Probes scoring ≥ 0.7 with `exploit_attempt` or `credential_brute_force` are forwarded to the IDS for blocking.
+
+**Trade-offs.** Skips RFC1918 / loopback / link-local source IPs by default to avoid alerting on internal scanning. Listens on `0.0.0.0` — disable in Settings if you don't want public-facing decoys.
+
+### 9. Federated Learning — Privacy-Preserving Model Improvement
+
+**Opt-in only.** Disabled by default; toggle in Settings.
+
+**What's transmitted.** ONLY the IsolationForest weight tensors — tree thresholds, node sample counts, value arrays. Limited to 20 trees per upload. **Never raw logs, IPs, usernames, hostnames, or any operational data.**
+
+**Differential privacy.** Gaussian mechanism. Tree-threshold weights are clipped to L2 norm ≤ 1.0, then perturbed with Gaussian noise (σ = noise_multiplier × sensitivity = 0.1 × 1.0 = 0.1). Privacy budget per upload is conservative — ε ≈ 0.0005 with δ = 1e-5, so even an adversary with full access to all uploads cannot learn anything specific about your data.
+
+**Aggregation & download.** The central server runs FedAvg over all opt-in clients. On download, your local model blends 30% community / 70% local thresholds — a conservative weighted average that nudges your detector toward community knowledge without overwriting your environment-specific learning.
+
+**Cadence.** Uploads every 24 h, downloads every 12 h. Anonymous random node ID generated locally and never linked to system identifiers.
+
+**Trade-offs.** Helps your detector spot novel attacks seen by other deployments. The DP noise costs slight accuracy but is non-negotiable for meaningful privacy. Marginal benefit if your local data is already rich; meaningful benefit on quiet systems with little training data.
 
 ---
 
@@ -352,6 +502,20 @@ server {
 **2FA is strongly recommended** — Without 2FA, a stolen password is enough to access the dashboard. Enable it during first-time setup.
 
 **Capabilities vs Root** — The installer sets `CAP_NET_RAW` on the Python binary to enable packet capture without running as root. This is scoped to that binary only.
+
+---
+
+## Recent Improvements
+
+- **Stable continuous training** — the anomaly detector now retrains cleanly every 500 samples without lock contention, so detection accuracy keeps improving over hours and days of operation without manual restarts.
+- **Federated learning fully wired** — model weight uploads and community-weight downloads now flow end-to-end. Opt-in clients begin contributing within 24 hours of enabling FL in Settings, and detector updates are blended in conservatively (30% community / 70% local).
+- **Single `AISBC_DATA_DIR` for all state** — every persisted artefact (DB, models, FIM baseline, vuln cache, honeypot data, FL state) honours one environment variable, making Docker and custom-path deployments straightforward.
+- **Configurable CORS** — defaults to same-origin (no CORS headers needed in standard installs); set `CORS_ORIGINS` for cross-origin dev or multi-host deployments.
+- **`SECRET_KEY` safety net** — the auth layer now logs a `CRITICAL` warning when `SECRET_KEY` is missing, instead of silently generating a fresh random key on every restart that would invalidate all issued JWTs.
+- **Better honeypot coverage** — payload classifier picks up direct sensitive-path requests (`/etc/passwd`, `/proc/self`, `~/.ssh/authorized_keys`) and the fingerprint clusterer's `/24` similarity scoring is fixed so distributed-from-one-subnet attacks merge into a single cluster as designed.
+- **More accurate private-IP detection** — the geo-lookup and honeypot's RFC1918 filter now correctly distinguish `172.16.0.0/12` (private) from public IPs in `172.32.0.0+`.
+- **Dashboard `alerts_by_severity`** — the overview API now returns unresolved-alert counts broken down by severity, ready for richer summary widgets.
+- **Python 3.12+ ready** — replaced deprecated `datetime.utcnow()` everywhere via a single `backend.utils.time.utcnow` helper. Forward-compatible with current and upcoming Python releases.
 
 ---
 
