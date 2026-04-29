@@ -24,7 +24,7 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 # Configuration
-FEDERATED_SERVER_URL = os.getenv("FEDERATED_SERVER_URL", "https://app-cool-waterfall-4592.fly.dev")
+FEDERATED_SERVER_URL = os.getenv("FEDERATED_SERVER_URL", "")
 AISBC_DATA_DIR = os.environ.get("AISBC_DATA_DIR", "/var/lib/ai-sbc-security")
 FL_STATE_FILE = os.path.join(AISBC_DATA_DIR, "federated_state.json")
 # Cadences are env-overridable so testing doesn't have to wait 24 hours.
