@@ -34,11 +34,11 @@ AISBC_DATA_DIR = os.environ.get("AISBC_DATA_DIR", "/var/lib/ai-sbc-security")
 FL_STATE_FILE = os.path.join(AISBC_DATA_DIR, "federated_state.json")
 # Cadences are env-overridable so testing doesn't have to wait 24 hours.
 # Set FL_UPLOAD_INTERVAL=300 in /etc/ai-sbc-security/env to upload every 5 min.
-FL_UPLOAD_INTERVAL = int(os.environ.get("FL_UPLOAD_INTERVAL", 3600 * 24))
-FL_DOWNLOAD_INTERVAL = int(os.environ.get("FL_DOWNLOAD_INTERVAL", 3600 * 12))
+FL_UPLOAD_INTERVAL = int(os.environ.get("FL_UPLOAD_INTERVAL", 1800))    # 30 min
+FL_DOWNLOAD_INTERVAL = int(os.environ.get("FL_DOWNLOAD_INTERVAL", 3600)) # 1 hour
 # Loop wake interval — also overridable so changes to upload/download
 # intervals are honoured promptly during testing.
-FL_LOOP_WAKE_INTERVAL = int(os.environ.get("FL_LOOP_WAKE_INTERVAL", 3600))
+FL_LOOP_WAKE_INTERVAL = int(os.environ.get("FL_LOOP_WAKE_INTERVAL", 900)) # 15 min
 
 # Differential privacy parameters
 DP_NOISE_MULTIPLIER = 0.1     # Gaussian noise σ = noise_multiplier × sensitivity
@@ -333,12 +333,6 @@ class FederatedLearningClient:
         # "Last attempt: 2m ago" even when nothing successful happens.
         self._state.last_upload_attempt_at = time.time()
 
-        if not FEDERATED_SERVER_URL:
-            self._state.last_upload_status = "no_server_configured"
-            self._save_state()
-            logger.info("FL: no FEDERATED_SERVER_URL configured, skipping upload")
-            return
-
         iforest = self._resolve_iforest()
         if iforest is None:
             self._state.last_upload_status = "model_not_trained"
@@ -395,12 +389,6 @@ class FederatedLearningClient:
 
     async def _download_weights(self):
         self._state.last_download_attempt_at = time.time()
-
-        if not FEDERATED_SERVER_URL:
-            self._state.last_download_status = "no_server_configured"
-            self._save_state()
-            logger.info("FL: no FEDERATED_SERVER_URL configured, skipping download")
-            return
 
         logger.info("FL: downloading aggregated weights")
 
@@ -530,6 +518,12 @@ class FederatedLearningClient:
                 with open(FL_STATE_FILE) as f:
                     data = json.load(f)
                 self._state = FLState.from_dict(data)
+                # Clear stale "no_server_configured" status — the server URL
+                # is now always set by default so this status is never valid.
+                if self._state.last_upload_status == "no_server_configured":
+                    self._state.last_upload_status = "never_attempted"
+                if self._state.last_download_status == "no_server_configured":
+                    self._state.last_download_status = "never_attempted"
         except Exception as e:
             logger.warning("FL: failed to load state: %s", e)
 
