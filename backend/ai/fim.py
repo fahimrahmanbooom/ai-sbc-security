@@ -77,6 +77,28 @@ SKIP_PATTERNS: Set[str] = {
     "~", ".cache", ".bak",
 }
 
+# ── Package-manager-owned paths (false-positive suppression) ──────────────────
+# Binaries here are installed/updated by the OS package manager (apt/rpm/etc.).
+# A modified binary in these locations that the ML scores as merely "suspicious"
+# (not "malicious") is almost always a legitimate package update, not an attack.
+# classify_severity() downgrades such events to "low", and the alert callback
+# skips them unless the ML label is "malicious".
+PACKAGE_MANAGED_PATHS: Set[str] = {
+    # polkit
+    "/usr/bin/pkexec",
+    "/usr/bin/pkaction",
+    "/usr/bin/pkcheck",
+    "/usr/bin/pkttyagent",
+}
+
+PACKAGE_MANAGED_PREFIXES: tuple = (
+    "/usr/lib/",
+    "/usr/share/",
+    "/lib/x86_64-linux-gnu/",
+    "/lib/aarch64-linux-gnu/",
+    "/lib/i386-linux-gnu/",
+)
+
 MAX_FILE_SIZE = 50 * 1024 * 1024   # 50 MB — skip larger files
 SCAN_DEPTH    = 3                   # max directory recursion depth
 RESCAN_INTERVAL = 300               # seconds between full scans
@@ -288,6 +310,21 @@ class ChangeClassifier:
 
 
 # ── Severity classifier ────────────────────────────────────────────────────────
+def _is_package_managed(path: str) -> bool:
+    """Return True if *path* is owned by the OS package manager.
+
+    Such paths are expected to change during normal system updates.  Flagging
+    them as HIGH on every apt/rpm run produces massive false-positive noise.
+    We only escalate them when the ML classifier is confident the change is
+    malicious (score ≥ malicious threshold).
+    """
+    if path in PACKAGE_MANAGED_PATHS:
+        return True
+    if path.startswith(PACKAGE_MANAGED_PREFIXES):
+        return True
+    return False
+
+
 def classify_severity(event: FIMEvent, ml_label: str) -> str:
     path = event.path
 
@@ -304,7 +341,14 @@ def classify_severity(event: FIMEvent, ml_label: str) -> str:
         if event.event_type in ("modified", "added"):
             return "critical"
 
-    # Binaries
+    # Package-manager-owned binaries: only escalate on confirmed malicious ML label.
+    # Without this guard, every routine package update generates HIGH alerts.
+    if _is_package_managed(path):
+        if ml_label == "malicious":
+            return "high"
+        return "low"
+
+    # Binaries (non-package-managed)
     if path.startswith(("/usr/bin", "/usr/sbin", "/bin", "/sbin")):
         if event.event_type == "modified":
             return "high"
@@ -467,8 +511,14 @@ class FileIntegrityMonitor:
 
         self._save_baseline()
 
-        # Fire callbacks for non-benign events
-        significant = [e for e in events if e.ml_label != "benign" or e.severity in ("critical", "high")]
+        # Fire callbacks for non-benign events.
+        # Package-managed paths are suppressed unless ML confirms malicious —
+        # they generate high false-positive volume during routine OS updates.
+        significant = [
+            e for e in events
+            if (e.ml_label != "benign" or e.severity in ("critical", "high"))
+            and not (_is_package_managed(e.path) and e.ml_label != "malicious")
+        ]
         for ev in significant:
             for cb in self._callbacks:
                 try:
