@@ -896,9 +896,14 @@ async def system_update(current_user: User = Depends(get_current_user)):
 
             if backend_changed:
                 await prog("Installing backend dependencies…")
+                # Use `sys.executable -m pip` so we always invoke the pip that
+                # belongs to the running Python, regardless of PATH or whether
+                # the system has `pip` vs `pip3` on the distro.
+                import sys as _sys
                 pip = await asyncio.to_thread(
                     _run_proc,
-                    "pip", "install", "-r", "requirements.txt",
+                    _sys.executable, "-m", "pip", "install",
+                    "-r", "requirements.txt",
                     "--break-system-packages", "--quiet",
                     cwd=os.path.join(repo, "backend"), timeout=180,
                 )
