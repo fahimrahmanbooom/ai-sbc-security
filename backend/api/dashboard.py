@@ -137,45 +137,61 @@ async def get_overview(
     metrics = sys_mon.get_latest()
     net_data = net_mon.get_latest()
 
-    # Recent alerts from DB
-    alert_result = await db.execute(
-        select(Alert).order_by(desc(Alert.timestamp)).limit(5)
-    )
-    recent_alerts = alert_result.scalars().all()
-
-    # Alert counts by severity (unresolved)
-    alerts_by_severity: Dict[str, int] = {}
-    for sev in ["critical", "high", "medium", "low"]:
-        r = await db.execute(
-            select(func.count(Alert.id)).where(
-                Alert.severity == sev,
-                Alert.resolved == False
-            )
-        )
-        alerts_by_severity[sev] = r.scalar() or 0
-
-    # Total unresolved
-    unresolved_r = await db.execute(
-        select(func.count(Alert.id)).where(Alert.resolved == False)
-    )
-    unresolved_count = unresolved_r.scalar() or 0
-
-    # Blocked IPs
-    blocked_r = await db.execute(select(func.count(BlockedIP.id)))
-    blocked_count = blocked_r.scalar() or 0
-
-    # 24h metric history
+    # ── All DB queries in parallel ────────────────────────────────────────────
     since = utcnow() - timedelta(hours=24)
-    hist_r = await db.execute(
-        select(MetricSnapshot).where(MetricSnapshot.timestamp > since)
-        .order_by(MetricSnapshot.timestamp)
+    (
+        recent_alerts_r,
+        sev_critical_r, sev_high_r, sev_medium_r, sev_low_r,
+        unresolved_r,
+        blocked_r,
+        hist_r,
+    ) = await asyncio.gather(
+        db.execute(select(Alert).order_by(desc(Alert.timestamp)).limit(5)),
+        db.execute(select(func.count(Alert.id)).where(Alert.severity == "critical", Alert.resolved == False)),
+        db.execute(select(func.count(Alert.id)).where(Alert.severity == "high",     Alert.resolved == False)),
+        db.execute(select(func.count(Alert.id)).where(Alert.severity == "medium",   Alert.resolved == False)),
+        db.execute(select(func.count(Alert.id)).where(Alert.severity == "low",      Alert.resolved == False)),
+        db.execute(select(func.count(Alert.id)).where(Alert.resolved == False)),
+        db.execute(select(func.count(BlockedIP.id))),
+        db.execute(
+            select(MetricSnapshot)
+            .where(MetricSnapshot.timestamp > since)
+            .order_by(MetricSnapshot.timestamp)
+        ),
     )
-    history = hist_r.scalars().all()
 
-    pred_stats = predictor.get_stats()
-    ids_stats = ids.get_stats()
-    log_stats = log_intel.get_stats()
+    recent_alerts = recent_alerts_r.scalars().all()
+    alerts_by_severity: Dict[str, int] = {
+        "critical": sev_critical_r.scalar() or 0,
+        "high":     sev_high_r.scalar()     or 0,
+        "medium":   sev_medium_r.scalar()   or 0,
+        "low":      sev_low_r.scalar()      or 0,
+    }
+    unresolved_count = unresolved_r.scalar() or 0
+    blocked_count    = blocked_r.scalar()    or 0
+    history          = hist_r.scalars().all()
+
+    # ── In-memory stats (CPU-bound, run together) ─────────────────────────────
+    pred_stats    = predictor.get_stats()
+    ids_stats     = ids.get_stats()
+    log_stats     = log_intel.get_stats()
     anomaly_stats = anomaly.get_stats()
+
+    # AI module status — inline so the frontend needs zero extra round-trips
+    fim_obj = get_fim()
+    hp_obj  = get_honeypot()
+    fl_obj  = get_fl_client()
+    fim_stats = fim_obj.get_stats()
+    hp_stats  = hp_obj.get_stats()
+    fl_status = fl_obj.get_status()
+    ai_module_status = {
+        "fim":       "active"   if fim_stats.get("baseline_established") else "starting",
+        "honeypot":  "active"   if hp_stats.get("active_ports", 0) > 0   else "idle",
+        "federated": "active"   if fl_status.get("enabled")               else "disabled",
+        "anomaly":   "active",
+        "ids":       "active",
+        "predictor": "active",
+    }
 
     return {
         "system": {
@@ -207,6 +223,7 @@ async def get_overview(
             "anomaly": anomaly_stats,
             "log_intel": log_stats,
             "predictor": pred_stats,
+            "module_status": ai_module_status,
         },
         "recent_alerts": [
             {

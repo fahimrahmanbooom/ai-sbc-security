@@ -44,17 +44,10 @@ export default function Overview({ liveMetrics, lastMessage }) {
           cpu: h.cpu, ram: h.ram, netIn: h.net_recv / 1024, netOut: h.net_sent / 1024, threat: h.threat_level * 100,
         })))
       }
-      // Fetch AI module statuses
-      const statuses = {}
-      await Promise.allSettled([
-        dashboardAPI.get('/fim/status').then(r => { statuses.fim = r.data?.baseline_established ? 'active' : 'starting' }),
-        dashboardAPI.get('/honeypot/stats').then(r => { statuses.honeypot = r.data?.active_ports > 0 ? 'active' : 'idle' }),
-        dashboardAPI.get('/federated/status').then(r => { statuses.federated = r.data?.enabled ? 'active' : 'disabled' }),
-      ])
-      statuses.anomaly   = d?.ai?.anomaly_score !== undefined ? 'active' : 'active'
-      statuses.ids       = 'active'
-      statuses.predictor = 'active'
-      setAiStatus(statuses)
+      // AI module statuses are now embedded in the overview response — no extra round-trips needed
+      if (d?.ai?.module_status) {
+        setAiStatus(d.ai.module_status)
+      }
     } catch {}
   }
 
