@@ -46,9 +46,9 @@ GLOBAL_MODEL_FILE = os.path.join(DATA_DIR, "global_model.json.gz")
 METADATA_FILE = os.path.join(DATA_DIR, "metadata.json")
 
 # Aggregation config
-MIN_SUBMISSIONS_FOR_AGGREGATION = 3    # minimum nodes before aggregating
+MIN_SUBMISSIONS_FOR_AGGREGATION = 1    # aggregate after every submission while community is small
 MAX_SUBMISSIONS_PER_ROUND = 500         # cap per aggregation round
-AGGREGATION_INTERVAL = 3600            # 1 hour between aggregation runs
+AGGREGATION_INTERVAL = 1800            # 30 min between aggregation runs (matches client upload interval)
 MAX_SUBMISSION_SIZE = 2 * 1024 * 1024  # 2 MB per submission
 
 os.makedirs(SUBMISSIONS_DIR, exist_ok=True)
