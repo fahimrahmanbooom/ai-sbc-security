@@ -301,8 +301,8 @@ export default function Settings() {
               const downMin = Math.round((flStatus.download_interval_seconds || 43200) / 60)
 
               const banner = noServerConfigured
-                ? { tone: 'warning', title: 'No aggregation server configured',
-                    body: 'Set FEDERATED_SERVER_URL in /etc/ai-sbc-security/env to point to your own server, or deploy the bundled federated-server.' }
+                ? { tone: 'info', title: 'Using community aggregation server',
+                    body: 'Connected to the shared community server. Override with FEDERATED_SERVER_URL in /etc/ai-sbc-security/env to use your own.' }
                 : anyFailed
                 ? { tone: 'danger', title: 'Sync failing',
                     body: flStatus.last_upload_message || flStatus.last_download_message }

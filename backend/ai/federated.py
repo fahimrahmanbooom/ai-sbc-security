@@ -24,7 +24,12 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 # Configuration
-FEDERATED_SERVER_URL = os.getenv("FEDERATED_SERVER_URL", "")
+# Default to the community aggregation server so every install participates
+# out of the box. Override with FEDERATED_SERVER_URL env var to use your own.
+FEDERATED_SERVER_URL = os.getenv(
+    "FEDERATED_SERVER_URL",
+    "https://ai-sbc-federated-server.onrender.com",
+)
 AISBC_DATA_DIR = os.environ.get("AISBC_DATA_DIR", "/var/lib/ai-sbc-security")
 FL_STATE_FILE = os.path.join(AISBC_DATA_DIR, "federated_state.json")
 # Cadences are env-overridable so testing doesn't have to wait 24 hours.
@@ -50,9 +55,9 @@ def _status_message(token: str) -> str:
     if token == "model_not_trained":
         return "Local AI model still warming up — first sync after ~500 samples (~40 min)"
     if token == "no_server_configured":
-        return "No aggregation server configured. Set FEDERATED_SERVER_URL in /etc/ai-sbc-security/env or deploy your own."
+        return "No aggregation server configured."
     if token == "server_unreachable":
-        return "Aggregation server unreachable — check FEDERATED_SERVER_URL or deploy your own"
+        return "Aggregation server unreachable — will retry on next cycle"
     if token == "deserialization_failed":
         return "Server responded but the payload was malformed"
     if token == "apply_failed":
