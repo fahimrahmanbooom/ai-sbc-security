@@ -258,6 +258,14 @@ class ChangeClassifier:
         """Returns (suspicion_score 0-1, label)."""
         self._change_times[event.path].append(event.timestamp)
 
+        # Package-managed binaries are expected to be executable, SUID, and
+        # root-owned — their feature vector routinely scores 0.80+ due to
+        # those structural properties alone, not actual malicious behaviour.
+        # Skip heuristic scoring entirely and return benign so downstream
+        # classify_severity() and the alert callback receive a clean signal.
+        if _is_package_managed(event.path):
+            return 0.0, "benign"
+
         features = self._extract_features(event, old, new)
         keys = list(self.WEIGHTS.keys())
         score = sum(
