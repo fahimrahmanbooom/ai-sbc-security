@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # out of the box. Override with FEDERATED_SERVER_URL env var to use your own.
 FEDERATED_SERVER_URL = os.getenv(
     "FEDERATED_SERVER_URL",
-    "https://ai-sbc-federated-server.onrender.com",
+    "https://ai-sbc-federated-server.fly.dev",
 )
 AISBC_DATA_DIR = os.environ.get("AISBC_DATA_DIR", "/var/lib/ai-sbc-security")
 FL_STATE_FILE = os.path.join(AISBC_DATA_DIR, "federated_state.json")
