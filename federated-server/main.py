@@ -77,6 +77,40 @@ def _load_global_model():
         logger.info("Loaded global model from %s", GLOBAL_MODEL_FILE)
 
 
+def _save_submission(submission: dict):
+    """Persist a submission to disk so it survives server restarts."""
+    try:
+        fname = f"{int(submission['_received_at'] * 1000)}_{submission['node_id'][:8]}.json.gz"
+        path = os.path.join(SUBMISSIONS_DIR, fname)
+        data = json.dumps(submission, separators=(",", ":")).encode("utf-8")
+        with open(path, "wb") as f:
+            f.write(gzip.compress(data, compresslevel=6))
+    except Exception as e:
+        logger.warning("Failed to persist submission: %s", e)
+
+
+def _load_submissions():
+    """Reload persisted submissions from disk on startup."""
+    global _submissions
+    loaded = []
+    try:
+        for fname in sorted(os.listdir(SUBMISSIONS_DIR)):
+            if not fname.endswith(".json.gz"):
+                continue
+            path = os.path.join(SUBMISSIONS_DIR, fname)
+            try:
+                with open(path, "rb") as f:
+                    data = gzip.decompress(f.read())
+                loaded.append(json.loads(data.decode("utf-8")))
+            except Exception as e:
+                logger.warning("Skipping corrupt submission %s: %s", fname, e)
+    except Exception as e:
+        logger.warning("Failed to load submissions from disk: %s", e)
+    _submissions = loaded
+    if loaded:
+        logger.info("Reloaded %d submissions from disk after restart", len(loaded))
+
+
 def _save_metadata():
     try:
         data = {
@@ -186,8 +220,14 @@ def run_aggregation():
     _last_aggregation = time.time()
     _stats["total_aggregations"] += 1
 
-    # Clear processed submissions (keep last 10 for redundancy)
+    # Keep last 10 submissions in memory for redundancy, remove older disk files
     _submissions = _submissions[-10:]
+    try:
+        all_files = sorted(os.listdir(SUBMISSIONS_DIR))
+        for fname in all_files[:-10]:  # remove all but the 10 most recent
+            os.unlink(os.path.join(SUBMISSIONS_DIR, fname))
+    except Exception as e:
+        logger.warning("Failed to clean up submission files: %s", e)
 
     _save_metadata()
     logger.info(
@@ -201,7 +241,11 @@ def run_aggregation():
 @app.on_event("startup")
 async def startup():
     _load_global_model()
-    logger.info("Federated Learning Server started")
+    _load_submissions()
+    # If we have enough submissions from a previous run, aggregate immediately
+    if len(_submissions) >= MIN_SUBMISSIONS_FOR_AGGREGATION:
+        run_aggregation()
+    logger.info("Federated Learning Server started (submissions=%d)", len(_submissions))
 
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
@@ -270,12 +314,14 @@ async def submit_weights(
     if dp_noise <= 0:
         raise HTTPException(400, "Submissions without differential privacy are not accepted")
 
-    # Store
-    _submissions.append({
+    # Store in memory and persist to disk so it survives restarts
+    submission = {
         "node_id": x_node_id[:8] + "...",  # truncate for privacy
         "weights": weights,
         "_received_at": time.time(),
-    })
+    }
+    _submissions.append(submission)
+    _save_submission(submission)
     _stats["total_submissions"] += 1
     _stats["active_nodes"].add(x_node_id[:8])
 
@@ -284,9 +330,10 @@ async def submit_weights(
         x_node_id[:8], _stats["total_submissions"], len(_submissions),
     )
 
-    # Auto-aggregate if enough new submissions
+    # Auto-aggregate if enough submissions — ignore interval on first aggregation
+    # so nodes don't have to wait up to AGGREGATION_INTERVAL for their first download
     if len(_submissions) >= MIN_SUBMISSIONS_FOR_AGGREGATION:
-        if time.time() - _last_aggregation >= AGGREGATION_INTERVAL:
+        if _last_aggregation == 0 or time.time() - _last_aggregation >= AGGREGATION_INTERVAL:
             run_aggregation()
 
     _save_metadata()
