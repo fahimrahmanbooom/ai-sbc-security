@@ -10,6 +10,8 @@ export default function AlertsPanel() {
   const [filter, setFilter] = useState('all')
   const [loading, setLoading] = useState(true)
   const [showResolved, setShowResolved] = useState(false)
+  const [bulkPending, setBulkPending] = useState(null) // { action: 'ack'|'resolve', severity: str|null }
+  const [bulkBusy, setBulkBusy] = useState(false)
 
   useEffect(() => { load() }, [showResolved])
 
@@ -33,14 +35,94 @@ export default function AlertsPanel() {
     load()
   }
 
+  // Bulk actions — ask for confirmation first, then execute
+  const requestBulk = (action) => {
+    // If a severity filter is active, scope the bulk op to that severity
+    setBulkPending({ action, severity: filter === 'all' ? null : filter })
+  }
+
+  const confirmBulk = async () => {
+    if (!bulkPending) return
+    setBulkBusy(true)
+    try {
+      const { action, severity } = bulkPending
+      if (action === 'ack') {
+        const { data } = await dashboardAPI.bulkAcknowledgeAlerts(severity)
+        toast.success(data.message)
+      } else {
+        const { data } = await dashboardAPI.bulkResolveAlerts(severity)
+        toast.success(data.message)
+      }
+      load()
+    } catch {
+      toast.error('Bulk action failed')
+    }
+    setBulkBusy(false)
+    setBulkPending(null)
+  }
+
   const filtered = filter === 'all' ? alerts : alerts.filter(a => a.severity === filter)
   const counts = SEV_ORDER.reduce((acc, sev) => {
     acc[sev] = alerts.filter(a => a.severity === sev).length
     return acc
   }, {})
 
+  // How many alerts will the pending bulk action affect (based on current loaded data)
+  const bulkTargetCount = bulkPending
+    ? (bulkPending.severity ? alerts.filter(a => a.severity === bulkPending.severity) : alerts)
+        .filter(a => bulkPending.action === 'ack' ? !a.acknowledged && !a.resolved : !a.resolved)
+        .length
+    : 0
+
   return (
     <div style={{ padding: 24 }}>
+
+      {/* Bulk-confirm modal */}
+      <AnimatePresence>
+        {bulkPending && (
+          <motion.div
+            key="bulk-modal"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 1000,
+              background: 'rgba(0,0,0,0.55)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+            onClick={() => !bulkBusy && setBulkPending(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.92, opacity: 0 }}
+              className="card"
+              style={{ padding: 28, width: 360, maxWidth: '90vw' }}
+              onClick={e => e.stopPropagation()}
+            >
+              <h3 style={{ margin: '0 0 10px', fontSize: 16, fontWeight: 700, color: 'var(--text-1)' }}>
+                {bulkPending.action === 'ack' ? 'Acknowledge All' : 'Resolve All'}
+              </h3>
+              <p style={{ fontSize: 14, color: 'var(--text-2)', marginBottom: 20, lineHeight: 1.55 }}>
+                This will{' '}
+                <strong>{bulkPending.action === 'ack' ? 'acknowledge' : 'close'}</strong>
+                {' '}<strong>{bulkTargetCount}</strong> alert{bulkTargetCount !== 1 ? 's' : ''}
+                {bulkPending.severity ? ` with severity "${bulkPending.severity.toUpperCase()}"` : ''}.
+                {bulkPending.action === 'resolve' && ' This cannot be undone.'}
+              </p>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button className="btn btn-ghost" onClick={() => setBulkPending(null)} disabled={bulkBusy}>
+                  Cancel
+                </button>
+                <button
+                  className={bulkPending.action === 'resolve' ? 'btn btn-danger' : 'btn btn-warning'}
+                  onClick={confirmBulk}
+                  disabled={bulkBusy}
+                  style={bulkPending.action === 'ack' ? { background: 'rgba(210,153,34,0.15)', color: '#d29922', borderColor: 'rgba(210,153,34,0.4)' } : {}}
+                >
+                  {bulkBusy ? 'Working…' : bulkPending.action === 'ack' ? 'Ack All' : 'Resolve All'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 8 }}>
@@ -50,10 +132,33 @@ export default function AlertsPanel() {
             {alerts.length} alert{alerts.length !== 1 ? 's' : ''} · real-time threat log
           </p>
         </div>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13, color: 'var(--text-3)' }}>
-          <input type="checkbox" checked={showResolved} onChange={e => setShowResolved(e.target.checked)} />
-          Show resolved
-        </label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          {/* Bulk action buttons */}
+          {!showResolved && alerts.some(a => !a.acknowledged && !a.resolved) && (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => requestBulk('ack')}
+              style={{ fontSize: 12, color: '#d29922', borderColor: 'rgba(210,153,34,0.35)' }}
+              title={filter !== 'all' ? `Acknowledge all ${filter.toUpperCase()} alerts` : 'Acknowledge all alerts'}
+            >
+              Ack {filter !== 'all' ? filter.toUpperCase() : 'All'}
+            </button>
+          )}
+          {!showResolved && alerts.some(a => !a.resolved) && (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => requestBulk('resolve')}
+              style={{ fontSize: 12, color: 'var(--danger)', borderColor: 'rgba(248,81,73,0.35)' }}
+              title={filter !== 'all' ? `Resolve all ${filter.toUpperCase()} alerts` : 'Resolve all alerts'}
+            >
+              Resolve {filter !== 'all' ? filter.toUpperCase() : 'All'}
+            </button>
+          )}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13, color: 'var(--text-3)' }}>
+            <input type="checkbox" checked={showResolved} onChange={e => setShowResolved(e.target.checked)} />
+            Show resolved
+          </label>
+        </div>
       </div>
 
       {/* Severity filter pills */}

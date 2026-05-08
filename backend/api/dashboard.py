@@ -305,6 +305,51 @@ async def resolve_alert(
     return {"message": "Alert resolved"}
 
 
+@router.patch("/alerts/bulk-acknowledge")
+async def bulk_acknowledge_alerts(
+    severity: Optional[str] = Query(None, description="Limit to a specific severity (e.g. 'high'). Omit for all."),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Acknowledge all unacknowledged, unresolved alerts in one shot.
+
+    Optional ?severity=<level> restricts the operation to a single severity tier
+    so callers can e.g. ack only the HIGH flood without touching CRITICAL alerts.
+    """
+    from sqlalchemy import update
+    stmt = (
+        update(Alert)
+        .where(Alert.acknowledged == False, Alert.resolved == False)
+    )
+    if severity:
+        stmt = stmt.where(Alert.severity == severity)
+    result = await db.execute(stmt.values(acknowledged=True))
+    await db.commit()
+    return {"message": f"{result.rowcount} alert(s) acknowledged"}
+
+
+@router.patch("/alerts/bulk-resolve")
+async def bulk_resolve_alerts(
+    severity: Optional[str] = Query(None, description="Limit to a specific severity. Omit for all."),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Resolve (close) all unresolved alerts in one shot.
+
+    Optional ?severity=<level> restricts the operation to a single severity tier.
+    """
+    from sqlalchemy import update
+    stmt = (
+        update(Alert)
+        .where(Alert.resolved == False)
+    )
+    if severity:
+        stmt = stmt.where(Alert.severity == severity)
+    result = await db.execute(stmt.values(resolved=True))
+    await db.commit()
+    return {"message": f"{result.rowcount} alert(s) resolved"}
+
+
 @router.get("/network/connections")
 async def get_connections(current_user: User = Depends(get_current_user)):
     from ..monitors.network import get_active_connections
